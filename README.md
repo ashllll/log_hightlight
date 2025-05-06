@@ -1,131 +1,159 @@
-# 日志高亮工具压力测试套件
+# Python日志高亮工具 (Log Highlighter)
 
-这个测试套件用于对Python日志高亮工具进行压力测试，包括生成测试日志、创建压缩归档和运行性能测试。
+一个高效的Python日志文件分析和高亮显示工具，帮助开发人员和系统管理员更快地分析和理解大型日志文件。
 
-## 目录结构
+![Python版本](https://img.shields.io/badge/Python-3.6+-blue.svg)
+![许可证](https://img.shields.io/badge/License-MIT-green.svg)
 
-```
-.
-├── README.md                  # 本说明文件
-├── keywords.toml              # 关键词配置文件
-├── generate_test_logs.py      # 生成测试日志的脚本
-├── create_archive.py          # 创建日志归档文件的脚本
-├── run_stress_test.py         # 性能压力测试脚本
-└── log_hightlight.py          # 日志高亮工具主程序
-```
+## 功能特点
 
-## 安装依赖
+### 核心功能
+- 🔍 **关键词高亮**：根据自定义关键词或预定义分组自动高亮显示日志内容
+- 📦 **压缩文件支持**：直接分析压缩包（zip, gz, tar等）中的日志文件
+- 🚀 **高性能处理**：优化的多进程处理支持，可以处理GB级别的日志文件
+- 🧠 **智能内存管理**：自适应内存使用监控和优化，防止内存溢出
+- 📊 **简洁美观的UI**：基于PyQt5的直观图形界面
 
-在运行测试之前，请确保安装了所需的Python库：
+### 性能优化
+- 多级关键词匹配策略
+- 使用ProcessPoolExecutor进行多核心并行处理
+- 智能文件批处理机制
+- 分级文件处理策略（小文件直接读取，大文件流式处理，超大文件内存映射）
 
+### 内存管理
+- 内存使用趋势监控
+- 自适应线程/进程数控制
+- 内存压力下的资源管理
+- 结果分块写入减少内存占用
+
+## 安装指南
+
+### 前提条件
+- Python 3.6+
+- pip (Python包管理器)
+
+### 安装步骤
+
+1. 克隆仓库
 ```bash
-pip install toml psutil PyQt5
+git clone https://github.com/ashllll/log_hightlight.git
+cd log_hightlight
 ```
 
-## 使用步骤
-
-### 1. 生成测试日志
-
-生成不同大小的测试日志文件：
-
+2. 创建虚拟环境（推荐）
 ```bash
-# 生成5个各10MB的日志文件
-python generate_test_logs.py --output test_logs --count 5 --size 10
-
-# 生成1个100MB的超大日志文件
-python generate_test_logs.py --output test_logs --count 1 --size 100
-
-# 生成压缩格式的日志文件
-python generate_test_logs.py --output test_logs --count 3 --size 20 --compress
+python -m venv venv
+source venv/bin/activate  # Linux/MacOS
+# 或者
+venv\\Scripts\\activate  # Windows
 ```
 
-参数说明：
-- `--output`/-o: 日志文件输出目录
-- `--count`/-c: 生成的文件数量
-- `--size`/-s: 每个文件大小(MB)
-- `--compress`: 使用gzip压缩生成的日志
-- `--error-rate`: 错误日志的概率(0-1)
-- `--regex-rate`: 包含正则匹配内容的概率(0-1)
-
-### 2. 创建日志归档文件
-
-将生成的日志文件打包成ZIP归档，用于测试解压功能：
-
+3. 安装依赖
 ```bash
-# 创建3个归档，每个包含5个日志文件，含嵌套结构
-python create_archive.py --source test_logs --output archives --count 3 --files 5 --nested
-
-# 创建1个大型归档，包含所有日志文件
-python create_archive.py --source test_logs --output archives --count 1 --files 20
+pip install -r requirements.txt
 ```
 
-参数说明：
-- `--source`/-s: 源日志目录
-- `--output`/-o: 输出目录
-- `--count`/-c: 创建的归档数量
-- `--files`/-f: 每个归档的文件数量
-- `--nested`/-n: 包含嵌套归档
+## 使用方法
 
-### 3. 运行压力测试
-
-测试日志高亮工具在不同场景下的性能表现：
-
+### 启动应用
 ```bash
-# 使用默认设置运行测试
-python run_stress_test.py --toml keywords.toml --logs test_logs
-
-# 指定Python解释器和工具路径
-python run_stress_test.py --python python3 --tool ./log_hightlight.py --toml keywords.toml --logs test_logs
+python log_hightlight.py
 ```
 
-参数说明：
-- `--python`: Python解释器路径
-- `--tool`: 日志高亮工具路径
-- `--toml`: TOML配置文件路径
-- `--logs`: 日志文件目录
-- `--output`: 测试结果输出目录
+### 基本操作流程
+1. **选择日志文件**：点击"浏览"按钮选择单个日志文件或压缩包
+2. **配置关键词**：勾选右侧的预定义关键词组或添加自定义关键词
+3. **开始分析**：点击"开始分析"按钮
+4. **查看结果**：分析完成后会自动打开生成的HTML报告
 
-## 测试策略建议
+### 关键词配置
+- 可以使用预定义的关键词分组（错误、警告、信息等）
+- 添加自定义关键词，支持精确匹配和正则表达式
+- 为关键词设置颜色、注释和匹配规则
 
-### 小文件测试
+## 配置文件
 
-生成多个小型日志文件，测试工具处理多文件的能力：
+应用程序使用TOML格式的配置文件 (`keywords.toml`) 来管理关键词分组：
 
-```bash
-python generate_test_logs.py --output test_small --count 20 --size 5
+```toml
+# 示例配置
+[group.errors]
+match_case = false
+whole_word = false
+use_regex = false
+
+[group.errors.error1]
+key = "ERROR"
+annotation = "错误级别日志"
+
+[group.errors.error2]
+key = "Exception"
+annotation = "异常信息"
 ```
 
-### 大文件测试
-
-生成少量大型日志文件，测试内存映射和流式处理功能：
-
-```bash
-python generate_test_logs.py --output test_large --count 2 --size 200
+## 项目结构
+```
+log_hightlight/
+├── log_hightlight.py       # 主程序
+├── keywords.toml           # 关键词配置文件
+├── create_archive.py       # 创建测试归档文件工具
+├── generate_test_logs.py   # 生成测试日志文件
+├── run_stress_test.py      # 性能测试脚本
+└── README.md               # 项目说明
 ```
 
-### 压缩文件测试
+## 示例
 
-创建嵌套的归档文件，测试工具处理复杂压缩结构的能力：
+### 错误日志分析
+![错误日志示例](https://example.com/error_log_demo.png)
 
-```bash
-python generate_test_logs.py --output test_compressed --count 10 --size 10 --compress
-python create_archive.py --source test_compressed --output test_archives --count 3 --nested
+### 系统性能监控日志
+![系统监控示例](https://example.com/system_log_demo.png)
+
+## 自定义开发
+
+### 添加新的关键词分组
+编辑 `keywords.toml` 文件，添加新的分组定义：
+
+```toml
+[group.custom_group]
+match_case = true
+whole_word = false
+use_regex = false
+
+[group.custom_group.keyword1]
+key = "YourKeyword"
+annotation = "自定义注释"
 ```
 
-### 关键词匹配测试
+### 自定义界面
+修改 `log_hightlight.py` 中的 UI 相关代码以满足特定需求。
 
-根据需要调整`keywords.toml`文件，添加或修改关键词组，特别关注：
+## 故障排除
 
-1. 正则表达式匹配性能
-2. 大量关键词的处理能力
-3. 不同匹配模式(大小写敏感、全词匹配)的效果
+### 常见问题
+- **分析速度慢**：对于大型日志文件，尝试增加配置中的线程数或进程数
+- **内存占用高**：调整内存管理参数，降低批处理大小
+- **无法识别压缩文件**：确保已安装所有必要的解压缩库
 
-## 结果分析
+## 贡献指南
 
-测试结果将保存在`test_results`目录下，包含：
+欢迎贡献代码、报告问题或提出改进建议！请遵循以下步骤：
 
-- 耗时统计
-- 内存使用情况
-- 不同场景下的性能比较
+1. Fork 项目仓库
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交您的更改 (`git commit -m 'Add some amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 开启一个 Pull Request
 
-通过分析这些结果，可以确定工具在不同场景下的最佳配置参数和性能瓶颈。 
+## 许可证
+
+本项目采用 MIT 许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。
+
+## 联系方式
+
+如有问题或建议，请通过GitHub Issues提交。
+
+---
+
+感谢使用Python日志高亮工具！希望它能帮助您更高效地分析日志文件。 
