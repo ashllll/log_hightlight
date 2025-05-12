@@ -1,29 +1,68 @@
-# Python虚拟环境
-venv/
+# Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*.so
 *.pyd
+*.pyo
+*.pdb
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.manifest
+*.spec
 
-# 开发工具
-.cursor/
-.idea/
+# 环境/依赖
+venv/
+.env/
+.envrc
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE/编辑器
 .vscode/
-
-# 系统文件
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.swp
+*.bak
 .DS_Store
 
-# 日志和临时文件
+# 日志/临时/缓存
 *.log
+*.tmp
+*.temp
 *.bak
+*.old
+*.orig
+*.swp
+*.swo
+*.~
 log_highlighter.log
 toml_debug.log
 
-# 测试和归档数据
+# 测试/输出
 archives/
 test_compressed/
 test_large/
 test_small/
 
-# 设置文件
-settings.json 
+# 离线依赖包
+libs/*.whl
+libs/*.tar.gz
+libs/*.zip
+libs/*.rar
+libs/*.7z
+libs/*.egg
+
+# 其他
+settings.json
+settings.json.bak
+*.db
+*.sqlite
+*.sqlite3
+
+# 不上传的脚本
+start.bat
+bootstrap.py 

@@ -13,6 +13,7 @@
 - 🚀 **高性能处理**：优化的多进程处理支持，可以处理GB级别的日志文件
 - 🧠 **智能内存管理**：自适应内存使用监控和优化，防止内存溢出
 - 📊 **简洁美观的UI**：基于PyQt5的直观图形界面
+- 💡 **一键离线启动**：支持Windows下无需联网自动安装依赖并启动
 
 ### 性能优化
 - 多级关键词匹配策略
@@ -26,39 +27,47 @@
 - 内存压力下的资源管理
 - 结果分块写入减少内存占用
 
-## 安装指南
+## 安装与启动指南
 
 ### 前提条件
 - Python 3.6+
-- pip (Python包管理器)
+- Windows 推荐直接用一键启动脚本，无需手动安装依赖
 
-### 安装步骤
+### 一键离线启动（推荐，适用于Windows）
+
+1. **下载完整项目（含 libs/ 依赖包目录）**
+2. 双击 `start.bat`，自动检测/安装所有依赖并启动主程序
+
+> `start.bat` 会自动调用 `bootstrap.py`，优先从 `libs/` 目录离线安装所有依赖，无需联网。
+
+### 手动安装（适用于Linux/MacOS或自定义环境）
 
 1. 克隆仓库
 ```bash
 git clone https://github.com/ashllll/log_hightlight.git
 cd log_hightlight
 ```
-
 2. 创建虚拟环境（推荐）
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/MacOS
 # 或者
-venv\\Scripts\\activate  # Windows
+venv\Scripts\activate  # Windows
 ```
-
 3. 安装依赖
 ```bash
 pip install -r requirements.txt
+```
+4. 启动应用
+```bash
+python log_hightlight.py
 ```
 
 ## 使用方法
 
 ### 启动应用
-```bash
-python log_hightlight.py
-```
+- Windows 推荐直接运行 `start.bat`
+- 其它平台运行 `python log_hightlight.py`
 
 ### 基本操作流程
 1. **选择日志文件**：点击"浏览"按钮选择单个日志文件或压缩包
@@ -70,6 +79,12 @@ python log_hightlight.py
 - 可以使用预定义的关键词分组（错误、警告、信息等）
 - 添加自定义关键词，支持精确匹配和正则表达式
 - 为关键词设置颜色、注释和匹配规则
+
+## 离线依赖包与自动安装
+
+- 所有三方依赖已下载至 `libs/` 目录
+- `bootstrap.py` 会自动检测缺失依赖并优先离线安装
+- 支持无网络环境下一键部署
 
 ## 配置文件
 
@@ -99,8 +114,17 @@ log_hightlight/
 ├── create_archive.py       # 创建测试归档文件工具
 ├── generate_test_logs.py   # 生成测试日志文件
 ├── run_stress_test.py      # 性能测试脚本
+├── requirements.txt        # 依赖列表
+├── bootstrap.py            # 自动检测/安装依赖并启动主程序
+├── start.bat               # Windows一键启动脚本
+├── libs/                   # 离线依赖包目录
+├── .gitignore              # Git忽略文件
 └── README.md               # 项目说明
 ```
+
+## .gitignore 说明
+- 已配置忽略虚拟环境、依赖包、临时文件、日志、测试输出、IDE配置等常见无关内容
+- `libs/` 下的所有 wheel/压缩包也会被忽略
 
 ## 示例
 
@@ -135,6 +159,7 @@ annotation = "自定义注释"
 - **分析速度慢**：对于大型日志文件，尝试增加配置中的线程数或进程数
 - **内存占用高**：调整内存管理参数，降低批处理大小
 - **无法识别压缩文件**：确保已安装所有必要的解压缩库
+- **依赖安装失败**：请确认 `libs/` 目录完整，或手动联网安装依赖
 
 ## 贡献指南
 

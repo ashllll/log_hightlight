@@ -1,0 +1,14 @@
+autopep8==2.3.2
+EasyProcess==1.1
+entrypoint2==1.1
+patool==4.0.0
+psutil==7.0.0
+pyahocorasick==2.1.0
+pycodestyle==2.13.0
+PyQt5==5.15.11
+PyQt5-Qt5==5.15.16
+PyQt5_sip==12.17.0
+pyunpack==0.3
+rarfile==4.2
+toml==0.10.2
+unrar==0.4 

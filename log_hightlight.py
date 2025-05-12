@@ -32,7 +32,7 @@ from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QCoreApplication
 from PyQt5.QtGui import QTextCharFormat, QColor, QFont, QIcon, QPixmap
 
 # 移除google-re2相关代码，直接使用Python内置re模块
-    RE_MODULE = re
+RE_MODULE = re
 logging.info("使用Python内置re模块进行正则表达式匹配")
 
 # 尝试导入 rarfile 库，用于解压 .rar 文件
@@ -100,21 +100,27 @@ CONFIG_DEFAULTS = {
 }
 
 # === 添加临时文件管理类 ===
+
+
 class TempFileManager:
     """临时文件管理器，负责创建、跟踪和清理临时文件"""
-    
+
     def __init__(self):
         self.temp_files = {}  # 路径 -> {"file_obj": 文件对象, "metadata": 元数据}
-        self.temp_dir = os.path.join(tempfile.gettempdir(), "log_highlighter_temp")
+        self.temp_dir = os.path.join(
+    tempfile.gettempdir(),
+     "log_highlighter_temp")
         os.makedirs(self.temp_dir, exist_ok=True)
-        
-    def create_temp_file(self, prefix: str, suffix: str, **metadata) -> Tuple[str, TextIO]:
+
+    def create_temp_file(self, prefix: str, suffix: str,
+                         **metadata) -> Tuple[str, TextIO]:
         """创建临时文件并返回路径和文件对象"""
-        fd, path = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=self.temp_dir, text=True)
+        fd, path = tempfile.mkstemp(
+    prefix=prefix, suffix=suffix, dir=self.temp_dir, text=True)
         file_obj = os.fdopen(fd, 'w', encoding='utf-8')
         self.temp_files[path] = {"file_obj": file_obj, "metadata": metadata}
         return path, file_obj
-        
+
     def close_file(self, path: str) -> None:
         """安全关闭临时文件"""
         if path in self.temp_files and "file_obj" in self.temp_files[path]:
@@ -123,7 +129,7 @@ class TempFileManager:
                     self.temp_files[path]["file_obj"].close()
             except Exception as e:
                 logging.error(f"关闭临时文件 {path} 失败: {e}")
-                
+
     def remove_file(self, path: str) -> bool:
         """删除临时文件并从跟踪中移除"""
         self.close_file(path)
@@ -136,12 +142,12 @@ class TempFileManager:
         except Exception as e:
             logging.error(f"删除临时文件 {path} 失败: {e}")
             return False
-            
+
     def cleanup_all(self) -> None:
         """清理所有临时文件"""
         for path in list(self.temp_files.keys()):
             self.remove_file(path)
-            
+
         # 清理临时目录中的所有剩余文件
         try:
             for filename in os.listdir(self.temp_dir):
@@ -153,13 +159,15 @@ class TempFileManager:
             logging.error(f"清理临时目录失败: {e}")
 
 # === 增加进度监控类 ===
+
+
 class ProgressMonitor:
     """跟踪扫描任务的进度和错误"""
-    
+
     def __init__(self, worker=None):
         """
         初始化进度监控器
-        
+
         Args:
             worker: 关联的工作线程，用于发送进度信号
         """
@@ -171,40 +179,42 @@ class ProgressMonitor:
         self.errors = {}
         self.warnings = []
         self.last_updated = 0
-        
+
     def set_total(self, total: int) -> None:
         """设置待处理文件总数"""
         self.total_files = total
-        
+
     def update(self, processed: int, current_file: str = "") -> None:
         """
         更新处理进度
-        
+
         Args:
             processed: 已处理文件数
             current_file: 当前正在处理的文件
         """
         self.processed_files = processed
-        
+
         # 限制更新频率(最多每0.5秒一次)
         current_time = time.time()
         if current_time - self.last_updated < 0.5:
             return
-            
+
         self.last_updated = current_time
-        
+
         # 如果有worker，发送进度信号
         if self.worker and hasattr(self.worker, 'progress'):
             if self.total_files > 0:
                 percent = min(int(processed / self.total_files * 100), 100)
-                self.worker.progress.emit(f"{percent}% ({processed}/{self.total_files}) - {current_file}")
+                self.worker.progress.emit(
+                    f"{percent}% ({processed}/{self.total_files}) - {current_file}")
             else:
-                self.worker.progress.emit(f"已处理 {processed} 个文件 - {current_file}")
-    
+                self.worker.progress.emit(
+    f"已处理 {processed} 个文件 - {current_file}")
+
     def record_error(self, error_type: str, message: str) -> None:
         """
         记录错误
-        
+
         Args:
             error_type: 错误类型
             message: 错误消息
@@ -213,11 +223,11 @@ class ProgressMonitor:
             self.errors[error_type] = []
         self.errors[error_type].append(message)
         self.failed_files += 1
-        
+
     def record_warning(self, message: str) -> None:
         """记录警告"""
         self.warnings.append(message)
-        
+
     def get_summary(self) -> str:
         """获取进度摘要"""
         duration = time.time() - self.start_time
@@ -228,13 +238,13 @@ class ProgressMonitor:
             f"成功处理: {self.processed_files - self.failed_files}",
             f"处理失败: {self.failed_files}"
         ]
-        
+
         # 添加错误汇总
         if self.errors:
             summary.append("\n错误统计:")
             for error_type, messages in self.errors.items():
                 summary.append(f"  {error_type}: {len(messages)}个")
-                
+
         # 添加警告汇总
         if self.warnings:
             summary.append("\n警告:")
@@ -242,13 +252,13 @@ class ProgressMonitor:
                 summary.append(f"  {warning}")
             if len(self.warnings) > 5:
                 summary.append(f"  ... 以及 {len(self.warnings) - 5} 个其他警告")
-                
+
         return "\n".join(summary)
-        
+
     def get_error_details(self) -> Dict[str, List[str]]:
         """获取错误详情"""
         return self.errors
-        
+
     def get_progress_percentage(self) -> float:
         """获取进度百分比"""
         if self.total_files > 0:
@@ -256,36 +266,39 @@ class ProgressMonitor:
         return 0.0
 
 # === 增加断点续传管理类 ===
+
+
 class CheckpointManager:
     """管理扫描任务的检查点，用于恢复中断的扫描任务"""
-    
+
     def __init__(self, checkpoint_dir: Optional[str] = None):
         """
         初始化检查点管理器
-        
+
         Args:
             checkpoint_dir: 检查点存储目录，默认为临时目录
         """
-        self.checkpoint_dir = checkpoint_dir or os.path.join(tempfile.gettempdir(), "log_highlighter_checkpoints")
+        self.checkpoint_dir = checkpoint_dir or os.path.join(
+            tempfile.gettempdir(), "log_highlighter_checkpoints")
         os.makedirs(self.checkpoint_dir, exist_ok=True)
-    
+
     def get_checkpoint_path(self, task_id: str) -> str:
         """获取检查点文件路径"""
         safe_id = self._sanitize_id(task_id)
         return os.path.join(self.checkpoint_dir, f"{safe_id}.json")
-    
+
     def _sanitize_id(self, task_id: str) -> str:
         """清理任务ID，确保文件名安全"""
         return re.sub(r'[^\w\-_]', '_', task_id)
-    
+
     def save_checkpoint(self, task_id: str, data: Dict) -> bool:
         """
         保存检查点数据
-        
+
         Args:
             task_id: 任务ID
             data: 检查点数据字典
-            
+
         Returns:
             保存成功返回True，否则返回False
         """
@@ -297,33 +310,33 @@ class CheckpointManager:
         except Exception as e:
             logging.error(f"保存检查点失败: {e}")
             return False
-    
+
     def load_checkpoint(self, task_id: str) -> Optional[Dict]:
         """
         加载检查点数据
-        
+
         Args:
             task_id: 任务ID
-            
+
         Returns:
             检查点数据字典，如果检查点不存在或加载失败则返回None
         """
         checkpoint_path = self.get_checkpoint_path(task_id)
         if not os.path.exists(checkpoint_path):
             return None
-            
+
         try:
             with open(checkpoint_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
             logging.error(f"加载检查点失败: {e}")
             return None
-    
+
     def has_checkpoint(self, task_id: str) -> bool:
         """检查任务是否有检查点"""
         checkpoint_path = self.get_checkpoint_path(task_id)
         return os.path.exists(checkpoint_path)
-    
+
     def remove_checkpoint(self, task_id: str) -> bool:
         """删除检查点"""
         checkpoint_path = self.get_checkpoint_path(task_id)
@@ -334,7 +347,7 @@ class CheckpointManager:
             except Exception as e:
                 logging.error(f"删除检查点失败: {e}")
         return False
-    
+
     def list_checkpoints(self) -> List[str]:
         """列出所有可用的检查点ID"""
         checkpoints = []
@@ -342,27 +355,27 @@ class CheckpointManager:
             if filename.endswith('.json'):
                 checkpoints.append(os.path.splitext(filename)[0])
         return checkpoints
-    
+
     def cleanup_old_checkpoints(self, max_age_hours: int = 24) -> int:
         """
         清理旧检查点
-        
+
         Args:
             max_age_hours: 最大保留时间(小时)
-            
+
         Returns:
             已清理的检查点数量
         """
         if not os.path.exists(self.checkpoint_dir):
             return 0
-            
+
         cleaned = 0
         cutoff_time = time.time() - (max_age_hours * 3600)
-        
+
         for filename in os.listdir(self.checkpoint_dir):
             if not filename.endswith('.json'):
                 continue
-                
+
             filepath = os.path.join(self.checkpoint_dir, filename)
             try:
                 if os.path.getmtime(filepath) < cutoff_time:
@@ -370,20 +383,27 @@ class CheckpointManager:
                     cleaned += 1
             except Exception as e:
                 logging.error(f"清理检查点 {filename} 失败: {e}")
-                
+
         return cleaned
 
 # === 强化内存监控类 ===
+
+
 class MemoryMonitor(QThread):
     """监控系统内存使用的线程类"""
-    
+
     warning = pyqtSignal(str)
     memory_status = pyqtSignal(float, bool, bool)  # 使用率, 是否警告, 是否危险
-    
-    def __init__(self, parent=None, warning_threshold=75, critical_threshold=90, check_interval=2.0):
+
+    def __init__(
+    self,
+    parent=None,
+    warning_threshold=75,
+    critical_threshold=90,
+     check_interval=2.0):
         """
         初始化内存监控器
-        
+
         Args:
             parent: 父组件
             warning_threshold: 内存使用率警告阈值(%)
@@ -400,7 +420,7 @@ class MemoryMonitor(QThread):
         self._is_critical = False
         self._peak_usage = 0.0
         self._usage_history = []
-        
+
         # 尝试导入psutil
         try:
             import psutil
@@ -408,32 +428,33 @@ class MemoryMonitor(QThread):
         except ImportError:
             self.psutil_available = False
             logging.warning("psutil 库不可用，内存监控功能受限")
-    
+
     def run(self):
         """监控线程的主循环"""
         self.running = True
         while self.running:
             try:
                 self._check_memory()
-                
+
                 # 发送内存状态信号
-                self.memory_status.emit(self._usage, self._is_warning, self._is_critical)
-                
+                self.memory_status.emit(
+    self._usage, self._is_warning, self._is_critical)
+
                 # 睡眠指定时间
                 for _ in range(int(self.check_interval * 2)):
                     if not self.running:
                         break
                     time.sleep(0.5)  # 分割睡眠以便更快响应停止请求
-                    
+
             except Exception as e:
                 logging.error(f"内存监控错误: {e}")
                 time.sleep(5)  # 出错时等待更长时间
-    
+
     def stop(self):
         """停止监控线程"""
         self.running = False
         self.wait(1000)  # 等待线程终止，最多1秒
-    
+
     def _check_memory(self):
         """检查当前内存使用情况"""
         if not self.psutil_available:
@@ -447,83 +468,83 @@ class MemoryMonitor(QThread):
             except:
                 pass
             return
-            
+
         # 使用psutil获取详细内存信息
         import psutil
         try:
             # 获取内存使用率
             memory = psutil.virtual_memory()
             self._usage = memory.percent
-            
+
             # 更新历史记录
             self._usage_history.append(self._usage)
             if len(self._usage_history) > 30:  # 保留最近30个数据点
                 self._usage_history.pop(0)
-                
+
             # 更新峰值
             self._peak_usage = max(self._peak_usage, self._usage)
-            
+
             # 更新状态
             old_warning = self._is_warning
             old_critical = self._is_critical
-            
+
             self._is_warning = self._usage >= self.warning_threshold
             self._is_critical = self._usage >= self.critical_threshold
-            
+
             # 状态变化时发出警告
             if not old_warning and self._is_warning:
                 msg = f"内存使用率达到警告水平: {self._usage:.1f}%"
                 logging.warning(msg)
                 self.warning.emit(msg)
-                
+
             if not old_critical and self._is_critical:
                 msg = f"内存使用率达到危险水平: {self._usage:.1f}%，将减少并发任务"
                 logging.warning(msg)
                 self.warning.emit(msg)
-                
+
                 # 触发内存释放
                 self._force_memory_cleanup()
-                
+
         except Exception as e:
             logging.error(f"获取内存使用率失败: {e}")
-    
+
     def _force_memory_cleanup(self):
         """强制内存清理"""
         try:
             # 触发Python垃圾回收
             gc.collect()
-            
+
             # 如果psutil可用，尝试更多清理
             if self.psutil_available:
                 import psutil
                 p = psutil.Process()
-                
+
                 # 如果支持内存紧缩，则执行
                 if hasattr(p, 'memory_maps'):
                     logging.info("执行内存紧缩")
         except Exception as e:
             logging.error(f"内存清理失败: {e}")
-    
+
     def get_usage(self) -> float:
         """获取当前内存使用率"""
         return self._usage
-    
+
     def get_peak_usage(self) -> float:
         """获取峰值内存使用率"""
         return self._peak_usage
-    
+
     def get_usage_trend(self) -> List[float]:
         """获取内存使用趋势"""
         return self._usage_history
-    
+
     def is_warning(self) -> bool:
         """内存使用率是否达到警告阈值"""
         return self._is_warning
-    
+
     def is_critical(self) -> bool:
         """内存使用率是否达到危险阈值"""
         return self._is_critical
-        
+
     def suggest_worker_count(self, requested_count: int) -> int:
         """根据内存使用情况建议工作线程数量"""
         if self._is_critical:
@@ -534,6 +555,7 @@ class MemoryMonitor(QThread):
             return max(1, requested_count // 2)
         else:
             return requested_count
+
 
 def generate_color(index: int, total: int) -> str:
     """
@@ -548,10 +570,19 @@ def generate_color(index: int, total: int) -> str:
     """
     hue = (index / max(total, 1)) % 1.0
     r, g, b = colorsys.hls_to_rgb(hue, 0.6, 0.5)
-    return '#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255))
+    return '#{:02x}{:02x}{:02x}'.format(
+        int(r * 255), int(g * 255), int(b * 255))
+
 
 class Keyword:
-    def __init__(self, raw: str, annotation: str, match_case: bool = False, whole_word: bool = False, use_regex: bool = False, color: str = "#ffff99"):
+    def __init__(
+    self,
+    raw: str,
+    annotation: str,
+    match_case: bool = False,
+    whole_word: bool = False,
+    use_regex: bool = False,
+     color: str = "#ffff99"):
         self.raw = raw
         self.annotation = annotation
         self.match_case = match_case
@@ -577,7 +608,9 @@ class Keyword:
         name = f'k{idx}'
         return f'(?P<{name}>{pat})', name
 
-def highlight_line(line: str, regex: 're.Pattern', mapping: Dict[str, Dict[str, str]]) -> str:
+
+def highlight_line(line: str, regex: 're.Pattern',
+                   mapping: Dict[str, Dict[str, str]]) -> str:
     """
     高亮显示一行日志中匹配的关键词。
     
@@ -598,14 +631,16 @@ def highlight_line(line: str, regex: 're.Pattern', mapping: Dict[str, Dict[str, 
                 color = meta.get("color", "#ffff99")
                 annotation = meta.get("annotation", "")
                 tooltip = f' title="{annotation}"' if annotation else ''
-                
+
                 # 将匹配的文本替换为带高亮的HTML
                 safe_text = html.escape(matched_text)
                 highlight = f'<span style="background-color: {color};"{tooltip}>{safe_text}</span>'
-                result = result.replace(html.escape(matched_text), highlight, 1)
+                result = result.replace(
+    html.escape(matched_text), highlight, 1)
                 break
-    
+
     return result
+
 
 def parse_timestamp(line: str) -> datetime.datetime:
     """
@@ -622,10 +657,12 @@ def parse_timestamp(line: str) -> datetime.datetime:
             ts_str = line[:18]
             # 假设年份为当前年份，如果需要更精确，可以从日志中提取
             current_year = datetime.datetime.now().year
-            return datetime.datetime.strptime(f"{current_year}-{ts_str}", "%Y-%m-%d %H:%M:%S.%f")
+            return datetime.datetime.strptime(
+    f"{current_year}-{ts_str}", "%Y-%m-%d %H:%M:%S.%f")
     except ValueError:
         logging.warning(f"无法解析时间戳: {line[:18] if len(line) >= 18 else line}")
     return datetime.datetime.min
+
 
 class ScanWorker(QThread):
     progress = pyqtSignal(str)  # 修改为单个字符串参数
@@ -634,8 +671,8 @@ class ScanWorker(QThread):
     warning = pyqtSignal(str)
     debug = pyqtSignal(str)  # 用于传递调试信息
 
-    def __init__(self, file_paths: List[str], keywords: List[Dict[str, Any]], 
-                 out_path: str, max_workers: int, config_params: Dict[str, Any], 
+    def __init__(self, file_paths: List[str], keywords: List[Dict[str, Any]],
+                 out_path: str, max_workers: int, config_params: Dict[str, Any],
                  temp_manager: Optional[TempFileManager] = None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.file_paths = file_paths
@@ -656,24 +693,31 @@ class ScanWorker(QThread):
         self.progress_monitor = ProgressMonitor(self)
         self.checkpoint_manager = CheckpointManager()
         self.memory_monitor = None
-        self.task_id = f"scan_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
+        self.task_id = f"scan_{
+    datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+
         # 扫描模式和优化配置
-        self.scan_mode = config_params.get("scan_mode", CONFIG_DEFAULTS["scan_mode"])
-        self.large_file_threshold = config_params.get("large_file_threshold", CONFIG_DEFAULTS["large_file_threshold"])
-        self.huge_file_threshold = config_params.get("huge_file_threshold", CONFIG_DEFAULTS["huge_file_threshold"])
-        self.prefilter_enabled = config_params.get("prefilter_enabled", CONFIG_DEFAULTS["prefilter_enabled"])
-        self.bitmap_filter_enabled = config_params.get("bitmap_filter_enabled", CONFIG_DEFAULTS["bitmap_filter_enabled"])
-        
+        self.scan_mode = config_params.get(
+    "scan_mode", CONFIG_DEFAULTS["scan_mode"])
+        self.large_file_threshold = config_params.get(
+    "large_file_threshold", CONFIG_DEFAULTS["large_file_threshold"])
+        self.huge_file_threshold = config_params.get(
+    "huge_file_threshold", CONFIG_DEFAULTS["huge_file_threshold"])
+        self.prefilter_enabled = config_params.get(
+    "prefilter_enabled", CONFIG_DEFAULTS["prefilter_enabled"])
+        self.bitmap_filter_enabled = config_params.get(
+    "bitmap_filter_enabled", CONFIG_DEFAULTS["bitmap_filter_enabled"])
+
         # 使用优化的关键词匹配器
-        self.keyword_matcher = KeywordMatcher(keywords, use_bitmap_filter=self.bitmap_filter_enabled)
-        
+        self.keyword_matcher = KeywordMatcher(
+    keywords, use_bitmap_filter=self.bitmap_filter_enabled)
+
         # 收集要匹配的所有原始关键词
         self.raw_list = [kw.get('raw', '') for kw in keywords]
-        
+
         # 是否使用进程池
         self.use_process_pool = config_params.get("use_process_pool", True)
-        
+
         # 结果缓存
         self._results_buffer = []
         self._results_buffer_size = 1000  # 每1000条结果写入一次
@@ -683,10 +727,10 @@ class ScanWorker(QThread):
         self._stop_requested = True
         if self._executor:
             self._executor.shutdown(wait=False, cancel_futures=True)
-            
+
         # 保存检查点以便后续恢复
         self._save_checkpoint()
-            
+
         if self.memory_monitor:
             self.memory_monitor.stop()
 
@@ -698,63 +742,68 @@ class ScanWorker(QThread):
                 "out_path": self.out_path,
                 "timestamp": datetime.datetime.now().isoformat()
             }
-            self.checkpoint_manager.save_checkpoint(self.task_id, checkpoint_data)
+            self.checkpoint_manager.save_checkpoint(
+                self.task_id, checkpoint_data)
             self.debug.emit(f"已保存检查点: {self.task_id}")
-                except Exception as e:
+        except Exception as e:
             logging.error(f"保存检查点失败: {e}")
 
     def run(self) -> None:
         """扫描文件线程的主要执行函数"""
         start_time = time.time()
         self.progress.emit("正在初始化扫描...")
-        
+
         # 创建并启动内存监控
         self.memory_monitor = MemoryMonitor(self)
         self.memory_monitor.start()
-        
+
         # 检查是否有需要恢复的任务
         if self.checkpoint_manager.has_checkpoint(self.task_id):
             checkpoint = self.checkpoint_manager.load_checkpoint(self.task_id)
             if checkpoint:
                 self.debug.emit(f"恢复之前的任务: {self.task_id}")
                 self._processed_files = checkpoint.get("processed_files", 0)
-        
+
         # 按照扫描模式调整检测策略
         self.debug.emit(f"使用扫描模式: {self.scan_mode}")
         if self.scan_mode == "fast":
             self.debug.emit("启用快速模式 - 使用低内存、高效率策略")
         elif self.scan_mode == "accurate":
             self.debug.emit("启用精确模式 - 使用高内存、高精度策略")
-            
+
         # 开始文件分析
-        worker_count = self.memory_monitor.suggest_worker_count(self.max_workers)
-        self.debug.emit(f"开始分析 {len(self.file_paths)} 个文件，使用 {worker_count} 个工作单元")
-        
+        worker_count = self.memory_monitor.suggest_worker_count(
+            self.max_workers)
+        self.debug.emit(
+            f"开始分析 {len(self.file_paths)} 个文件，使用 {worker_count} 个工作单元")
+
         # 按照时间范围分组处理数据
         temp_output_files = []
         try:
             # 创建适当的执行器（进程池或线程池）
             self._executor = self._create_optimized_executor(worker_count)
-            
+
             # 准备进度报告
             total_files = len(self.file_paths)
             processed = 0
             skipped = 0
             self.progress.emit("0%")
-            
+
             # 跟踪各个时间范围的数据
-            time_groups: Dict[Tuple[datetime.datetime, datetime.datetime], List[Tuple[str, str]]] = {}
-            
+            time_groups: Dict[Tuple[datetime.datetime,
+                datetime.datetime], List[Tuple[str, str]]] = {}
+
             # 为了减少内存使用，分批处理文件
             batches = self._prepare_batched_tasks()
-            
+
             # 分批处理文件
             for batch_idx, batch in enumerate(batches):
                 if self._stop_requested:
                     break
-                    
-                self.debug.emit(f"处理批次 {batch_idx+1}/{len(batches)}，包含 {len(batch)} 个文件")
-                
+
+                self.debug.emit(
+                    f"处理批次 {batch_idx + 1}/{len(batches)}，包含 {len(batch)} 个文件")
+
                 # 并发处理当前批次
                 future_to_file = {}
                 for file_path in batch:
@@ -762,21 +811,23 @@ class ScanWorker(QThread):
                         break
                     future = self._executor.submit(self.scan_file, file_path)
                     future_to_file[future] = file_path
-                
+
                 # 收集当前批次结果
                 for future in as_completed(future_to_file):
                     if self._stop_requested:
                         break
-                    
+
                     file_path = future_to_file[future]
                     try:
                         filename, matches = future.result()
                         processed += 1
-                        
+
                         # 处理匹配结果
                         if matches:
-                            self.debug.emit(f"在文件 {filename} 中找到 {len(matches)} 个匹配")
-                            
+                            self.debug.emit(
+    f"在文件 {filename} 中找到 {
+        len(matches)} 个匹配")
+
                             # 按照时间范围分组
                             for timestamp, highlighted in matches:
                                 # 尝试解析时间戳
@@ -784,69 +835,83 @@ class ScanWorker(QThread):
                                     ts = parse_timestamp(timestamp)
                                     start_ts = ts.replace(
                                         minute=0, second=0, microsecond=0,
-                                        hour=ts.hour - (ts.hour % self.time_range_hours)
+                                        hour=ts.hour - (ts.hour %
+                                                        self.time_range_hours)
                                     )
-                                    end_ts = start_ts + datetime.timedelta(hours=self.time_range_hours)
+                                    end_ts = start_ts + \
+                                        datetime.timedelta(
+                                            hours=self.time_range_hours)
                                     if (start_ts, end_ts) not in time_groups:
                                         time_groups[(start_ts, end_ts)] = []
-                                    time_groups[(start_ts, end_ts)].append((ts, highlighted))
-                                    
+                                    time_groups[(start_ts, end_ts)].append(
+                                        (ts, highlighted))
+
                                     # 如果结果缓冲区太大，执行垃圾回收
-                                    if sum(len(group) for group in time_groups.values()) % 5000 == 0:
+                                    if sum(
+    len(group) for group in time_groups.values()) % 5000 == 0:
                                         gc.collect()
-                                        
+
                                 except Exception:
                                     # 如果时间解析失败，放入默认组
                                     default_ts = datetime.datetime.now()
-                                    start_ts = default_ts.replace(hour=0, minute=0, second=0, microsecond=0)
-                                    end_ts = start_ts + datetime.timedelta(days=1)
+                                    start_ts = default_ts.replace(
+                                        hour=0, minute=0, second=0, microsecond=0)
+                                    end_ts = start_ts + \
+                                        datetime.timedelta(days=1)
                                     if (start_ts, end_ts) not in time_groups:
                                         time_groups[(start_ts, end_ts)] = []
-                                    time_groups[(start_ts, end_ts)].append((datetime.datetime.now(), highlighted))
+                                    time_groups[(start_ts, end_ts)].append(
+                                        (datetime.datetime.now(), highlighted))
                         else:
                             skipped += 1
-                            
+
                         # 更新进度
                         if processed % self._batch_update_size == 0 or processed == total_files:
-                            progress_pct = min(int((processed / total_files) * 100), 100)
-                            self.progress.emit(f"{progress_pct}% ({processed}/{total_files})")
-                            
+                            progress_pct = min(
+                                int((processed / total_files) * 100), 100)
+                            self.progress.emit(
+    f"{progress_pct}% ({processed}/{total_files})")
+
                             # 定期保存检查点
                             self._processed_files = processed
                             if processed % 50 == 0:
                                 self._save_checkpoint()
-                                
+
                                 # 尝试释放内存
                                 if self.memory_monitor.is_warning():
                                     self._flush_results_for_group(time_groups)
-                            
-                except Exception as e:
+                    except Exception as e:
                         logging.error(f"处理文件 {file_path} 失败: {e}")
-                        self.progress_monitor.record_error("文件处理", f"{file_path}: {str(e)}")
-                
+                        self.progress_monitor.record_error(
+                            "文件处理", f"{file_path}: {str(e)}")
+
                 # 每完成一个批次，清理一次内存
                 gc.collect()
-            
+
             # 处理结果
             if not self._stop_requested and time_groups:
                 self.progress.emit("正在生成输出文件...")
-                
+
                 # 检查输出文件数量限制
                 if len(time_groups) > self.max_output_files:
-                    self.warning.emit(f"时间范围过多，将限制为最多 {self.max_output_files} 个输出文件")
+                    self.warning.emit(
+    f"时间范围过多，将限制为最多 {
+        self.max_output_files} 个输出文件")
                     # 保留最新的N个时间范围
-                    sorted_groups = sorted(time_groups.keys(), key=lambda x: x[0], reverse=True)
+                    sorted_groups = sorted(
+    time_groups.keys(), key=lambda x: x[0], reverse=True)
                     for time_range in sorted_groups[self.max_output_files:]:
                         del time_groups[time_range]
-                
+
                 # 为每个时间范围创建输出文件
                 temp_output_files = self._generate_output_files(time_groups)
-                
+
             # 生成统计报告
             if not self._stop_requested:
                 self.progress.emit("正在生成统计报告...")
-                self._generate_summary_report(temp_output_files, processed, skipped)
-        
+                self._generate_summary_report(
+    temp_output_files, processed, skipped)
+
         except Exception as e:
             self.error.emit(f"扫描过程中发生错误: {str(e)}")
             logging.error(f"扫描过程中发生错误: {e}", exc_info=True)
@@ -854,19 +919,19 @@ class ScanWorker(QThread):
             # 清理资源
             if self._executor:
                 self._executor.shutdown()
-            
+
             # 停止内存监控
             if self.memory_monitor:
                 self.memory_monitor.stop()
-            
+
             # 输出完成信息
             duration = time.time() - start_time
             self.debug.emit(f"扫描完成，用时: {duration:.2f} 秒")
-            
+
             if self._result_truncated:
                 self.warning.emit(f"部分结果因超出限制被截断。建议增加 '最大结果数' 设置或分割日志文件。")
-                
-            if not self._stop_requested:  
+
+            if not self._stop_requested:
                 # 打开生成的第一个文件
                 if temp_output_files:
                     first_file = temp_output_files[0]
@@ -874,56 +939,66 @@ class ScanWorker(QThread):
                     webbrowser.open(f"file://{os.path.abspath(first_file)}")
                 else:
                     self.debug.emit("未生成任何输出文件")
-            
+
             # 发送完成信号
             self.progress.emit("已完成")
-            self.finished.emit(summary_path if 'summary_path' in locals() else "")
-    
+            self.finished.emit(
+    summary_path if 'summary_path' in locals() else "")
+
     def _flush_results_for_group(self, time_groups):
         """尝试将一部分结果写入临时文件以释放内存"""
         # 待实现：将部分结果写入临时文件，然后从内存中清除
         pass
-    
+
     def _generate_output_files(self, time_groups) -> List[str]:
         """生成所有输出文件"""
         temp_output_files = []
-        
-        for i, ((start_ts, end_ts), matches) in enumerate(sorted(time_groups.items(), key=lambda x: x[0][0])):
+
+        for i, ((start_ts, end_ts), matches) in enumerate(
+            sorted(time_groups.items(), key=lambda x: x[0][0])):
             if self._stop_requested:
                 break
-                
+
             if not matches:
                 continue
-                
+
             # 创建临时HTML文件
             prefix = f"log_hl_{i:03d}_"
             suffix = ".html.tmp"
             temp_path, temp_file = self.temp_manager.create_temp_file(
-                prefix=prefix, suffix=suffix, 
+                prefix=prefix, suffix=suffix,
                 time_range=(start_ts, end_ts)
             )
-            
+
             # 写入HTML头部
             temp_file.write('<!DOCTYPE html>\n<html>\n<head>\n')
             temp_file.write('<meta charset="utf-8">\n')
             temp_file.write(f'<title>日志分析 {start_ts} - {end_ts}</title>\n')
             temp_file.write('<style>\n')
-            temp_file.write('body { font-family: Consolas, monospace; margin: 20px; }\n')
-            temp_file.write('pre { line-height: 1.5; white-space: pre-wrap; }\n')
+            temp_file.write(
+                'body { font-family: Consolas, monospace; margin: 20px; }\n')
+            temp_file.write(
+                'pre { line-height: 1.5; white-space: pre-wrap; }\n')
             temp_file.write('.timestamp { color: #666; font-weight: bold; }\n')
             temp_file.write('</style>\n')
             temp_file.write('</head>\n<body>\n')
-            temp_file.write(f'<h1>日志分析: {start_ts.strftime("%Y-%m-%d %H:%M")} 到 {end_ts.strftime("%Y-%m-%d %H:%M")}</h1>\n')
-            
+            temp_file.write(
+    f'<h1>日志分析: {
+        start_ts.strftime("%Y-%m-%d %H:%M")} 到 {
+            end_ts.strftime("%Y-%m-%d %H:%M")}</h1>\n')
+
             # 按时间排序匹配结果
             sorted_matches = sorted(matches, key=lambda x: x[0])
-            
+
             # 检查结果数量限制
             if len(sorted_matches) > self.max_results:
                 self._result_truncated = True
-                temp_file.write(f'<div style="color:red;font-weight:bold;">警告: 结果数量超过 {self.max_results} 条限制，仅显示前 {self.max_results} 条。</div>\n')
+                temp_file.write(
+    f'<div style="color:red;font-weight:bold;">警告: 结果数量超过 {
+        self.max_results} 条限制，仅显示前 {
+            self.max_results} 条。</div>\n')
                 sorted_matches = sorted_matches[:self.max_results]
-            
+
             # 写入结果
             temp_file.write('<pre>\n')
             for ts, highlighted in sorted_matches:
@@ -931,20 +1006,23 @@ class ScanWorker(QThread):
                     ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
                 else:
                     ts_str = str(ts)
-                temp_file.write(f'<span class="timestamp">[{ts_str}]</span> {highlighted}<br>\n')
+                temp_file.write(
+    f'<span class="timestamp">[{ts_str}]</span> {highlighted}<br>\n')
             temp_file.write('</pre>\n')
-            
+
             # 关闭临时文件
             self.temp_manager.close_file(temp_path)
-            
+
             # 生成最终HTML文件
-            output_file = self._finalize_output_file(temp_path, start_ts, end_ts)
+            output_file = self._finalize_output_file(
+                temp_path, start_ts, end_ts)
             if output_file:
                 temp_output_files.append(output_file)
-                self.debug.emit(f"已生成输出文件 {i+1}/{len(time_groups)}: {os.path.basename(output_file)}")
-                
+                self.debug.emit(
+                    f"已生成输出文件 {i + 1}/{len(time_groups)}: {os.path.basename(output_file)}")
+
         return temp_output_files
-    
+
     def _create_optimized_executor(self, worker_count: int):
         """创建优化的执行器，可以是进程池或线程池"""
         if self.use_process_pool and worker_count > 1:
@@ -955,11 +1033,11 @@ class ScanWorker(QThread):
             except Exception as e:
                 logging.error(f"创建进程池失败: {e}")
                 self.debug.emit(f"创建进程池失败，回退到线程池: {e}")
-        
+
         # 如果进程池创建失败或不使用进程池，则使用线程池
         self.debug.emit(f"创建线程池，线程数: {worker_count}")
         return ThreadPoolExecutor(max_workers=worker_count)
-    
+
     def _prepare_batched_tasks(self) -> List[List[str]]:
         """将文件任务分批，优先处理小文件"""
         # 获取文件大小信息
@@ -972,44 +1050,48 @@ class ScanWorker(QThread):
                 # 文件可能无法访问，使用0大小
                 logging.warning(f"无法获取文件大小 {path}: {e}")
                 file_sizes.append((path, 0))
-        
+
         # 按大小排序 (小到大)
         file_sizes.sort(key=lambda x: x[1])
-        
+
         # 批量划分，平衡每批的文件数量和总大小
         batches = []
         current_batch = []
         current_batch_size = 0
-        target_batch_size = sum(size for _, size in file_sizes) / (self.max_workers * 2)
-        target_batch_size = max(target_batch_size, 10 * 1024 * 1024)  # 最小10MB一批
-        
+        target_batch_size = sum(size for _,
+     size in file_sizes) / (self.max_workers * 2)
+        target_batch_size = max(
+    target_batch_size,
+     10 * 1024 * 1024)  # 最小10MB一批
+
         for path, size in file_sizes:
             if current_batch_size + size > target_batch_size and current_batch:
                 batches.append(current_batch)
                 current_batch = []
                 current_batch_size = 0
-            
+
             current_batch.append(path)
             current_batch_size += size
-        
+
         # 添加最后一批
         if current_batch:
             batches.append(current_batch)
-            
+
         self.debug.emit(f"任务分批完成: {len(batches)} 批")
         return batches
 
     def scan_file(self, path: str) -> Tuple[str, List[Tuple[str, str]]]:
         """处理单个文件，根据文件大小选择不同处理策略"""
-                out = []
-                fname = os.path.basename(path)
-                try:
-                    # 检查文件大小
-                    file_size = os.path.getsize(path)
-                    if file_size > self.max_file_size:
-                        logging.warning(f"文件 {path} 超出大小限制 ({file_size} bytes)，已跳过")
-                        return fname, out
-                
+        out = []
+        fname = os.path.basename(path)
+        try:
+            # 检查文件大小
+            file_size = os.path.getsize(path)
+            if file_size > self.max_file_size:
+                logging.warning(
+                    f"文件 {path} 超出大小限制 ({file_size} bytes)，已跳过")
+                return fname, out
+
             # 根据文件大小和扫描模式选择处理策略
             if self.scan_mode == "auto":
                 if file_size < self.large_file_threshold:
@@ -1027,7 +1109,6 @@ class ScanWorker(QThread):
                     return self._scan_large_file_streaming(path)
                 else:
                     return self._scan_huge_file_mmap(path)
-                    
         except Exception as e:
             logging.error(f"扫描文件 {path} 时出错: {e}")
             return fname, out
@@ -1036,80 +1117,72 @@ class ScanWorker(QThread):
         """处理小文件，一次性读取整个文件到内存"""
         out = []
         fname = os.path.basename(path)
-        
         try:
             for encoding in ['utf-8', 'gbk', 'gb2312', 'latin-1']:
                 try:
                     with open(path, 'r', encoding=encoding) as f:
                         for line in f:
                             if self._stop_requested:
-                                                    break
+                                break
                             self._process_line_with_matcher(line, out)
                     return fname, out
-                        except UnicodeDecodeError:
-                            continue
-                        except Exception as e:
+                except UnicodeDecodeError:
+                    continue
+                except Exception as e:
+                    logging.error(f"读取文件 {path} 失败: {e}")
+                    break
+        except Exception as e:
             logging.error(f"读取文件 {path} 失败: {e}")
-            
         return fname, out
         
     def _scan_large_file_streaming(self, path: str) -> Tuple[str, List[Tuple[str, str]]]:
-        """使用流式处理大文件，减少内存占用"""
+        """流式处理大文件（待实现/补全）"""
         out = []
         fname = os.path.basename(path)
-        
         try:
-            # 优化块大小
-            file_size = os.path.getsize(path)
-            optimal_chunk = min(self.chunk_size, max(1024 * 1024, file_size // 100))
-            
-            # 使用生成器方式处理文件
-            for line in self._read_file_by_chunks(path, chunk_size=optimal_chunk):
-                if self._stop_requested:
-                    break
-                self._process_line_with_matcher(line, out)
-                    
-                # 处理结果太多时截断
-                if len(out) >= self.max_results * 2:
-                    out = out[:self.max_results]
-                            break
+            for encoding in ['utf-8', 'gbk', 'gb2312', 'latin-1']:
+                try:
+                    with open(path, 'r', encoding=encoding, errors='ignore') as f:
+                        for line in f:
+                            if self._stop_requested:
+                                break
+                            self._process_line_with_matcher(line, out)
+                    return fname, out
+                except UnicodeDecodeError:
+                    continue
                 except Exception as e:
+                    logging.error(f"读取文件 {path} 失败: {e}")
+                    break
+        except Exception as e:
             logging.error(f"读取文件 {path} 失败: {e}")
-            
-                return fname, out
-
+        return fname, out
+    
     def _scan_huge_file_mmap(self, path: str) -> Tuple[str, List[Tuple[str, str]]]:
         """使用内存映射处理超大文件"""
         out = []
         fname = os.path.basename(path)
-        
         if not MMAP_AVAILABLE:
             logging.warning("mmap不可用，回退到流式处理")
             return self._scan_large_file_streaming(path)
-            
         try:
             with open(path, 'r+b') as f:
                 # 尝试推断文件编码
-                encoding = self._detect_file_encoding(path)
-                
+                encoding = self._detect_file_encoding(path) if hasattr(self, '_detect_file_encoding') else 'utf-8'
                 # 使用内存映射
                 mm = mmap.mmap(f.fileno(), 0)
                 pos = 0
                 while pos < mm.size():
                     if self._stop_requested:
                         break
-                        
                     # 查找下一个换行符
                     next_pos = mm.find(b'\n', pos)
                     if next_pos == -1:
                         next_pos = mm.size()
-                        
                     # 读取一行
                     line_bytes = mm[pos:next_pos]
                     try:
-                        line = line_bytes.decode(encoding)
+                        line = line_bytes.decode(encoding, errors='ignore')
                         self._process_line_with_matcher(line, out)
-                        
                         # 处理结果太多时截断
                         if len(out) >= self.max_results * 2:
                             out = out[:self.max_results]
@@ -1117,16 +1190,13 @@ class ScanWorker(QThread):
                     except UnicodeDecodeError:
                         # 解码失败则跳过此行
                         pass
-                        
                     pos = next_pos + 1
-                    
                 mm.close()
-                    except Exception as e:
+        except Exception as e:
             logging.error(f"内存映射处理文件 {path} 失败: {e}")
             # 出错时回退到流式处理
             if not out:
                 return self._scan_large_file_streaming(path)
-                
         return fname, out
     
     def _process_line_with_matcher(self, line: str, out: List[Tuple[str, str]]) -> None:
@@ -1227,26 +1297,22 @@ class ScanWorker(QThread):
     def _finalize_output_file(self, temp_file: str, start_time: datetime.datetime, end_time: datetime.datetime) -> Optional[str]:
         """将临时HTML文件转换为最终输出文件"""
         try:
-                if os.path.exists(temp_file):
-                    start_str = start_time.strftime("%Y-%m-%d_%H-%M-%S")
-                    end_str = end_time.strftime("%Y-%m-%d_%H-%M-%S")
-                    output_filename = f"{self.out_path}_{start_str}_to_{end_str}.html"
-                
-                    with open(output_filename, 'w', encoding='utf-8') as outf:
-                        with open(temp_file, 'r', encoding='utf-8') as tempf:
-                            content = tempf.read()
-                            outf.write(content)
-                            outf.write('</body></html>')
-                
+            if os.path.exists(temp_file):
+                start_str = start_time.strftime("%Y-%m-%d_%H-%M-%S")
+                end_str = end_time.strftime("%Y-%m-%d_%H-%M-%S")
+                output_filename = f"{self.out_path}_{start_str}_to_{end_str}.html"
+                with open(output_filename, 'w', encoding='utf-8') as outf:
+                    with open(temp_file, 'r', encoding='utf-8') as tempf:
+                        content = tempf.read()
+                        outf.write(content)
+                        outf.write('</body></html>')
                 # 删除临时文件
                 self.temp_manager.remove_file(temp_file)
-                
-                    return output_filename
+                return output_filename
         except Exception as e:
             logging.error(f"创建最终输出文件失败: {e}")
             self.error.emit(f"创建最终输出文件失败: {str(e)}")
-            
-                return None
+            return None
 
     def _is_archive_file(self, filepath: str) -> bool:
         """检查文件是否为支持的压缩格式"""
@@ -1496,12 +1562,12 @@ class ScanWorker(QThread):
                                     "use_regex": uz,
                                     "color": color
                                 })
-                else:
+                            else:
                                 self.debug.append(f"      跳过条目 '{k}' (非关键词定义)")
 
                         self.debug.append(f"  从分组 '{subgroup_key}' (来自 {group_name}) 中成功添加了 {entries_count} 个关键词")
 
-            except Exception as e:
+                    except Exception as e:
                         self.debug.append(f"  加载或处理分组 '{group_name}' 时发生错误: {str(e)}")
                         logging.error(f"加载分组 '{group_name}' 失败: {e}")
                         continue # 跳过这个有问题的分组
@@ -1725,33 +1791,25 @@ class ScanWorker(QThread):
                 self.history["keywords"] = h.get("keywords", [])
                 cores = h.get("cores", os.cpu_count() or 1)
                 self.spin_cores.setValue(cores)
-                
                 # 加载基本参数设置
                 self.config_params["max_results"] = h.get("max_results", CONFIG_DEFAULTS["max_results"])
                 self.spin_max_results.setValue(self.config_params["max_results"])
-                
                 self.config_params["time_range_hours"] = h.get("time_range_hours", CONFIG_DEFAULTS["time_range_hours"])
                 self.spin_time_range.setValue(self.config_params["time_range_hours"])
-                
                 self.config_params["chunk_size"] = h.get("chunk_size", CONFIG_DEFAULTS["chunk_size"])
                 self.spin_chunk_size.setValue(self.config_params["chunk_size"] // 1024)
-                
                 self.config_params["thread_timeout"] = h.get("thread_timeout", CONFIG_DEFAULTS["thread_timeout"])
                 self.spin_thread_timeout.setValue(self.config_params["thread_timeout"])
-                
                 self.config_params["max_file_size"] = h.get("max_file_size", CONFIG_DEFAULTS["max_file_size"])
                 self.spin_max_file_size.setValue(self.config_params["max_file_size"] // (1024 * 1024))
-                
                 self.config_params["batch_update_size"] = h.get("batch_update_size", CONFIG_DEFAULTS["batch_update_size"])
                 self.spin_batch_update_size.setValue(self.config_params["batch_update_size"])
-                
                 # 加载优化相关设置
                 self.config_params["scan_mode"] = h.get("scan_mode", CONFIG_DEFAULTS["scan_mode"])
                 self.config_params["prefilter_enabled"] = h.get("prefilter_enabled", CONFIG_DEFAULTS["prefilter_enabled"])
                 self.config_params["bitmap_filter_enabled"] = h.get("bitmap_filter_enabled", CONFIG_DEFAULTS["bitmap_filter_enabled"])
                 self.config_params["large_file_threshold"] = h.get("large_file_threshold", CONFIG_DEFAULTS["large_file_threshold"])
                 self.config_params["huge_file_threshold"] = h.get("huge_file_threshold", CONFIG_DEFAULTS["huge_file_threshold"])
-                
                 # 更新扫描模式UI
                 mode_reverse_map = {
                     "auto": "自动",
@@ -1763,11 +1821,9 @@ class ScanWorker(QThread):
                 index = self.scan_mode_combo.findText(mode_text)
                 if index >= 0:
                     self.scan_mode_combo.setCurrentIndex(index)
-                    
                 # 更新预过滤设置
                 if hasattr(self, 'prefilter_check'):
                     self.prefilter_check.setChecked(self.config_params["prefilter_enabled"])
-                    
                 if hasattr(self, 'bitmap_filter_check'):
                     self.bitmap_filter_check.setChecked(self.config_params["bitmap_filter_enabled"])
                 
@@ -1799,8 +1855,7 @@ class ScanWorker(QThread):
                 # 更新优化信息
                 if hasattr(self, 'debug'):
                     QTimer.singleShot(100, self._update_optimization_info)
-                    
-                        except Exception as e:
+            except Exception as e:
                 logging.error(f"加载设置失败: {e}")
                 QMessageBox.critical(self, "设置错误", f"加载设置失败: {str(e)}")
 
@@ -2417,26 +2472,21 @@ class LogHighlighter(QMainWindow):
                     for sub_group_key, group_data in actual_groups.items():
                         full_group_name = f"group.{sub_group_key}" # 构建完整的组名，如 group.errors
                         display_name = sub_group_key # 使用子分组名作为显示名称
-                        
                         # 检查 group_data 是否是字典
                         if not isinstance(group_data, dict):
                             self.debug.append(f"警告: '{full_group_name}' 在配置文件中的值不是字典，跳过.")
                             continue
-                            
-                    color = generate_color(idx, total_groups)
+                        color = generate_color(idx, total_groups)
                         self.group_colors[full_group_name] = color # 使用完整组名作为键
-                        
-                    cb = QCheckBox(display_name)
+                        cb = QCheckBox(display_name)
                         cb.setProperty("group_name", full_group_name) # 存储完整组名
-                    self.group_layout.addWidget(cb)
-                        
+                        self.group_layout.addWidget(cb)
                         # 调试：检查该分组是否包含关键词
                         keyword_count = sum(1 for k, v in group_data.items() if isinstance(v, dict) and "key" in v)
                         self.debug.append(f"创建复选框: 显示='{display_name}', 属性名='{full_group_name}', 包含 {keyword_count} 个关键词")
                         idx += 1
                 else:
                     self.debug.append("配置文件中未找到预期的顶层 'group' 字典结构.")
-
             except Exception as e:
                 logging.error(f"更新分组复选框失败: {e}")
                 self.debug.append(f"更新分组复选框失败: {str(e)}")
