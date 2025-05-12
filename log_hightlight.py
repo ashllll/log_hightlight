@@ -19,7 +19,7 @@ import gzip
 import time
 import re  # 直接使用Python内置re模块
 import multiprocessing as mp
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter, defaultdict
 from typing import List, Dict, Tuple, Optional, Generator, TextIO, Set, Any
 from PyQt5.QtWidgets import (
@@ -390,7 +390,7 @@ class CheckpointManager:
 
 
 class MemoryMonitor(QThread):
-    """监控系统内存使用的线程类"""
+    """监控系统内存使用的线程类（简化版，不使用 psutil）"""
 
     warning = pyqtSignal(str)
     memory_status = pyqtSignal(float, bool, bool)  # 使用率, 是否警告, 是否危险
@@ -415,19 +415,16 @@ class MemoryMonitor(QThread):
         self.critical_threshold = critical_threshold
         self.check_interval = check_interval
         self.running = False
-        self._usage = 0.0
+        self._usage = 50.0  # 固定值，因为没有 psutil
         self._is_warning = False
         self._is_critical = False
         self._peak_usage = 0.0
         self._usage_history = []
-
-        # 尝试导入psutil
-        try:
-            import psutil
-            self.psutil_available = True
-        except ImportError:
-            self.psutil_available = False
-            logging.warning("psutil 库不可用，内存监控功能受限")
+        
+        # 记录 GC 信息作为内存使用的粗略指标
+        self._gc_counts = [0, 0, 0]  # 三代 GC 计数
+        
+        logging.info("内存监控功能已简化（未使用 psutil）")
 
     def run(self):
         """监控线程的主循环"""
@@ -456,26 +453,29 @@ class MemoryMonitor(QThread):
         self.wait(1000)  # 等待线程终止，最多1秒
 
     def _check_memory(self):
-        """检查当前内存使用情况"""
-        if not self.psutil_available:
-            # 没有psutil时使用简单的方法估计内存
-            try:
-                import gc
-                gc.collect()  # 触发垃圾回收
-                self._usage = 50.0  # 无法准确获取，返回保守估计
-                self._is_warning = False
-                self._is_critical = False
-            except:
-                pass
-            return
-
-        # 使用psutil获取详细内存信息
-        import psutil
+        """检查当前内存使用情况（不使用 psutil 的简化版本）"""
         try:
-            # 获取内存使用率
-            memory = psutil.virtual_memory()
-            self._usage = memory.percent
-
+            # 触发垃圾回收并记录 GC 信息，作为内存压力的指标
+            import gc
+            
+            # 获取当前 GC 计数
+            new_counts = gc.get_count()
+            
+            # 如果第三代 GC 计数增加，视为内存压力增大
+            if new_counts[2] > self._gc_counts[2]:
+                self._usage = min(self._usage + 10.0, 90.0)  # 增加内存使用率估计
+            elif new_counts[1] > self._gc_counts[1]:
+                self._usage = min(self._usage + 5.0, 85.0)
+            else:
+                # 否则视为内存压力稳定
+                self._usage = max(self._usage - 1.0, 50.0)  # 缓慢恢复，但不低于 50%
+            
+            # 更新 GC 计数记录
+            self._gc_counts = new_counts
+            
+            # 强制收集所有代际的垃圾
+            gc.collect()
+            
             # 更新历史记录
             self._usage_history.append(self._usage)
             if len(self._usage_history) > 30:  # 保留最近30个数据点
@@ -513,15 +513,7 @@ class MemoryMonitor(QThread):
         try:
             # 触发Python垃圾回收
             gc.collect()
-
-            # 如果psutil可用，尝试更多清理
-            if self.psutil_available:
-                import psutil
-                p = psutil.Process()
-
-                # 如果支持内存紧缩，则执行
-                if hasattr(p, 'memory_maps'):
-                    logging.info("执行内存紧缩")
+            logging.info("执行内存清理")
         except Exception as e:
             logging.error(f"内存清理失败: {e}")
 
@@ -693,8 +685,7 @@ class ScanWorker(QThread):
         self.progress_monitor = ProgressMonitor(self)
         self.checkpoint_manager = CheckpointManager()
         self.memory_monitor = None
-        self.task_id = f"scan_{
-    datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+        self.task_id = f"scan_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
 
         # 扫描模式和优化配置
         self.scan_mode = config_params.get(
@@ -714,9 +705,6 @@ class ScanWorker(QThread):
 
         # 收集要匹配的所有原始关键词
         self.raw_list = [kw.get('raw', '') for kw in keywords]
-
-        # 是否使用进程池
-        self.use_process_pool = config_params.get("use_process_pool", True)
 
         # 结果缓存
         self._results_buffer = []
@@ -824,9 +812,7 @@ class ScanWorker(QThread):
 
                         # 处理匹配结果
                         if matches:
-                            self.debug.emit(
-    f"在文件 {filename} 中找到 {
-        len(matches)} 个匹配")
+                            self.debug.emit(f"在文件 {filename} 中找到 {len(matches)} 个匹配")
 
                             # 按照时间范围分组
                             for timestamp, highlighted in matches:
@@ -869,8 +855,7 @@ class ScanWorker(QThread):
                         if processed % self._batch_update_size == 0 or processed == total_files:
                             progress_pct = min(
                                 int((processed / total_files) * 100), 100)
-                            self.progress.emit(
-    f"{progress_pct}% ({processed}/{total_files})")
+                            self.progress.emit(f"{progress_pct}% ({processed}/{total_files})")
 
                             # 定期保存检查点
                             self._processed_files = processed
@@ -894,9 +879,7 @@ class ScanWorker(QThread):
 
                 # 检查输出文件数量限制
                 if len(time_groups) > self.max_output_files:
-                    self.warning.emit(
-    f"时间范围过多，将限制为最多 {
-        self.max_output_files} 个输出文件")
+                    self.warning.emit(f"时间范围过多，将限制为最多 {self.max_output_files} 个输出文件")
                     # 保留最新的N个时间范围
                     sorted_groups = sorted(
     time_groups.keys(), key=lambda x: x[0], reverse=True)
@@ -942,8 +925,7 @@ class ScanWorker(QThread):
 
             # 发送完成信号
             self.progress.emit("已完成")
-            self.finished.emit(
-    summary_path if 'summary_path' in locals() else "")
+            self.finished.emit(summary_path if "summary_path" in locals() else "")
 
     def _flush_results_for_group(self, time_groups):
         """尝试将一部分结果写入临时文件以释放内存"""
@@ -982,10 +964,7 @@ class ScanWorker(QThread):
             temp_file.write('.timestamp { color: #666; font-weight: bold; }\n')
             temp_file.write('</style>\n')
             temp_file.write('</head>\n<body>\n')
-            temp_file.write(
-    f'<h1>日志分析: {
-        start_ts.strftime("%Y-%m-%d %H:%M")} 到 {
-            end_ts.strftime("%Y-%m-%d %H:%M")}</h1>\n')
+            temp_file.write(f"<h1>日志分析: {start_ts.strftime('%Y-%m-%d %H:%M')} 到 {end_ts.strftime('%Y-%m-%d %H:%M')}</h1>\n")
 
             # 按时间排序匹配结果
             sorted_matches = sorted(matches, key=lambda x: x[0])
@@ -993,10 +972,7 @@ class ScanWorker(QThread):
             # 检查结果数量限制
             if len(sorted_matches) > self.max_results:
                 self._result_truncated = True
-                temp_file.write(
-    f'<div style="color:red;font-weight:bold;">警告: 结果数量超过 {
-        self.max_results} 条限制，仅显示前 {
-            self.max_results} 条。</div>\n')
+                temp_file.write(f"<div style=\"color:red;font-weight:bold;\">警告: 结果数量超过 {self.max_results} 条限制，仅显示前 {self.max_results} 条。</div>\n")
                 sorted_matches = sorted_matches[:self.max_results]
 
             # 写入结果
@@ -1006,8 +982,7 @@ class ScanWorker(QThread):
                     ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
                 else:
                     ts_str = str(ts)
-                temp_file.write(
-    f'<span class="timestamp">[{ts_str}]</span> {highlighted}<br>\n')
+                temp_file.write(f"<span class=\"timestamp\">[{ts_str}]</span> {highlighted}<br>\n")
             temp_file.write('</pre>\n')
 
             # 关闭临时文件
@@ -1018,23 +993,13 @@ class ScanWorker(QThread):
                 temp_path, start_ts, end_ts)
             if output_file:
                 temp_output_files.append(output_file)
-                self.debug.emit(
-                    f"已生成输出文件 {i + 1}/{len(time_groups)}: {os.path.basename(output_file)}")
+                self.debug.emit(f"已生成输出文件 {i + 1}/{len(time_groups)}: {os.path.basename(output_file)}")
 
         return temp_output_files
 
     def _create_optimized_executor(self, worker_count: int):
         """创建优化的执行器，可以是进程池或线程池"""
-        if self.use_process_pool and worker_count > 1:
-            try:
-                # 使用进程池以利用多核处理
-                self.debug.emit(f"创建进程池，进程数: {worker_count}")
-                return ProcessPoolExecutor(max_workers=worker_count)
-            except Exception as e:
-                logging.error(f"创建进程池失败: {e}")
-                self.debug.emit(f"创建进程池失败，回退到线程池: {e}")
-
-        # 如果进程池创建失败或不使用进程池，则使用线程池
+        # 直接使用线程池，避免pickle错误
         self.debug.emit(f"创建线程池，线程数: {worker_count}")
         return ThreadPoolExecutor(max_workers=worker_count)
 
@@ -1625,10 +1590,6 @@ class ScanWorker(QThread):
             # 创建工作线程
             max_workers = self.spin_cores.value()
             
-            # 更新配置
-            if hasattr(self, 'use_process_pool'):
-                self.config_params["use_process_pool"] = self.use_process_pool.isChecked()
-            
             # 创建工作线程
             self.worker = ScanWorker(
                 file_paths=files,
@@ -1861,34 +1822,33 @@ class ScanWorker(QThread):
 
     def save_settings(self) -> None:
         """保存设置"""
-        self.history["cores"] = self.spin_cores.value()
-        self.history["max_results"] = self.config_params["max_results"]
-        self.history["time_range_hours"] = self.config_params["time_range_hours"]
-        self.history["chunk_size"] = self.config_params["chunk_size"]
-        self.history["thread_timeout"] = self.config_params["thread_timeout"]
-        self.history["max_file_size"] = self.config_params["max_file_size"]
-        self.history["batch_update_size"] = self.config_params["batch_update_size"]
-        
-        # 保存优化设置
-        self.history["scan_mode"] = self.config_params.get("scan_mode", CONFIG_DEFAULTS["scan_mode"])
-        self.history["prefilter_enabled"] = self.config_params.get("prefilter_enabled", CONFIG_DEFAULTS["prefilter_enabled"])
-        self.history["bitmap_filter_enabled"] = self.config_params.get("bitmap_filter_enabled", CONFIG_DEFAULTS["bitmap_filter_enabled"])
-        self.history["large_file_threshold"] = self.config_params.get("large_file_threshold", CONFIG_DEFAULTS["large_file_threshold"])
-        self.history["huge_file_threshold"] = self.config_params.get("huge_file_threshold", CONFIG_DEFAULTS["huge_file_threshold"])
-        
-        obj = {"config_path": self.config_path, "history": self.history}
+        data = {
+            "config_path": self.config_path,
+            "history": {
+                "sources": self.history["sources"],
+                "keywords": self.history["keywords"],
+                "cores": self.spin_cores.value(),
+                "max_results": self.spin_max_results.value(),
+                "time_range_hours": self.spin_time_range.value(),
+                "chunk_size": self.spin_chunk_size.value() * 1024,
+                "thread_timeout": self.spin_thread_timeout.value(),
+                "max_file_size": self.spin_max_file_size.value() * (1024 * 1024),
+                "batch_update_size": self.spin_batch_update_size.value(),
+                # 存储优化设置
+                "scan_mode": self.config_params.get("scan_mode"),
+                "prefilter_enabled": hasattr(self, 'prefilter_check') and self.prefilter_check.isChecked(),
+                "bitmap_filter_enabled": hasattr(self, 'bitmap_filter_check') and self.bitmap_filter_check.isChecked(),
+                "large_file_threshold": self.config_params.get("large_file_threshold", CONFIG_DEFAULTS["large_file_threshold"]),
+                "huge_file_threshold": self.config_params.get("huge_file_threshold", CONFIG_DEFAULTS["huge_file_threshold"])
+            }
+        }
         try:
-            # 创建备份文件
-            if os.path.exists(self.settings_path):
-                backup_path = self.settings_path + ".bak"
-                with open(self.settings_path, 'r', encoding='utf-8') as f:
-                    with open(backup_path, 'w', encoding='utf-8') as bf:
-                        bf.write(f.read())
+            os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
             with open(self.settings_path, 'w', encoding='utf-8') as f:
-                json.dump(obj, f, ensure_ascii=False)
+                json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logging.error(f"保存设置失败: {e}")
-            QMessageBox.critical(self, "设置错误", f"保存设置失败: {str(e)}")
+            QMessageBox.warning(self, "警告", f"保存设置失败: {str(e)}")
 
 # === 添加高效关键词匹配类 ===
 class KeywordMatcher:
@@ -2136,19 +2096,27 @@ class MemoryStatusWidget(QFrame):
                 break
     
     def update_status(self):
-        """手动更新状态"""
+        """手动更新状态（不使用 psutil）"""
         try:
-            import psutil
-            memory = psutil.virtual_memory()
-            usage = memory.percent
-            is_warning = usage >= 75
-            is_critical = usage >= 90
+            # 使用简化的内存估计
+            import gc
+            gc.collect()  # 触发垃圾回收
+            
+            # 使用固定值作为估计
+            usage = 50.0
+            is_warning = False
+            is_critical = False
             
             self.update_memory_status(usage, is_warning, is_critical)
             
-        except (ImportError, Exception) as e:
-            # 无法获取内存信息，可能psutil未安装
-                pass
+            # 更新其他状态信息
+            self._update_status_value("CPU核心数", f"{mp.cpu_count()}")
+            self._update_status_value("内存状态", "正常")
+            self._update_status_value("GC计数", f"{gc.get_count()}")
+            
+        except Exception as e:
+            logging.error(f"更新状态失败: {e}")
+            pass
 
 class LogHighlighter(QMainWindow):
     def __init__(self):
@@ -2266,9 +2234,9 @@ class LogHighlighter(QMainWindow):
         cpu_l = QHBoxLayout(cpu_g)
         cpu_l.addWidget(QLabel("使用核心:"))
         self.spin_cores = QSpinBox()
-        maxc = os.cpu_count() or 1
-        self.spin_cores.setRange(1, maxc)
-        self.spin_cores.setValue(maxc)
+        self.spin_cores.setMinimum(1)
+        self.spin_cores.setMaximum(mp.cpu_count() * 2)  # 最多允许使用CPU核心数的2倍
+        self.spin_cores.setValue(max(1, mp.cpu_count() - 1))
         cpu_l.addWidget(self.spin_cores)
         cpu_l.addStretch()
         ll.addWidget(cpu_g)
@@ -2306,20 +2274,17 @@ class LogHighlighter(QMainWindow):
         self.prefilter_check.setChecked(CONFIG_DEFAULTS["prefilter_enabled"])
         self.prefilter_check.stateChanged.connect(lambda v: self.update_config_param("prefilter_enabled", bool(v)))
         
-        self.bitmap_filter_check = QCheckBox("启用位图过滤")
-        self.bitmap_filter_check.setChecked(CONFIG_DEFAULTS["bitmap_filter_enabled"])
-        self.bitmap_filter_check.stateChanged.connect(lambda v: self.update_config_param("bitmap_filter_enabled", bool(v)))
-        
-        # 使用进程池
-        self.use_process_pool = QCheckBox("使用进程池")
-        self.use_process_pool.setChecked(True)
+        # 使用位图过滤
+        self.bitmap_filter_check = QCheckBox("位图过滤 (加速大文件)")
+        self.bitmap_filter_check.setChecked(True)
+        self.bitmap_filter_check.stateChanged.connect(
+            lambda state: self.update_config_param("bitmap_filter_enabled", state == Qt.Checked))
         
         prefilter_l.addWidget(self.prefilter_check)
         prefilter_l.addWidget(self.bitmap_filter_check)
         params_l.addLayout(prefilter_l)
         
         process_l = QHBoxLayout()
-        process_l.addWidget(self.use_process_pool)
         process_l.addStretch()
         params_l.addLayout(process_l)
 
@@ -2685,16 +2650,33 @@ class LogHighlighter(QMainWindow):
 
     def save_settings(self) -> None:
         """保存设置"""
-        self.history["cores"] = self.spin_cores.value()
-        self.history["max_results"] = self.config_params["max_results"]
-        
-        obj = {"config_path": self.config_path, "history": self.history}
+        data = {
+            "config_path": self.config_path,
+            "history": {
+                "sources": self.history["sources"],
+                "keywords": self.history["keywords"],
+                "cores": self.spin_cores.value(),
+                "max_results": self.spin_max_results.value(),
+                "time_range_hours": self.spin_time_range.value(),
+                "chunk_size": self.spin_chunk_size.value() * 1024,
+                "thread_timeout": self.spin_thread_timeout.value(),
+                "max_file_size": self.spin_max_file_size.value() * (1024 * 1024),
+                "batch_update_size": self.spin_batch_update_size.value(),
+                # 存储优化设置
+                "scan_mode": self.config_params.get("scan_mode"),
+                "prefilter_enabled": hasattr(self, 'prefilter_check') and self.prefilter_check.isChecked(),
+                "bitmap_filter_enabled": hasattr(self, 'bitmap_filter_check') and self.bitmap_filter_check.isChecked(),
+                "large_file_threshold": self.config_params.get("large_file_threshold", CONFIG_DEFAULTS["large_file_threshold"]),
+                "huge_file_threshold": self.config_params.get("huge_file_threshold", CONFIG_DEFAULTS["huge_file_threshold"])
+            }
+        }
         try:
+            os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
             with open(self.settings_path, 'w', encoding='utf-8') as f:
-                json.dump(obj, f, ensure_ascii=False)
+                json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logging.error(f"保存设置失败: {e}")
-            QMessageBox.critical(self, "设置错误", f"保存设置失败: {str(e)}")
+            QMessageBox.warning(self, "警告", f"保存设置失败: {str(e)}")
             
     def analyze_combined_keywords(self) -> None:
         """开始分析日志文件中的关键词。"""
@@ -2860,10 +2842,6 @@ class LogHighlighter(QMainWindow):
 
             # 创建工作线程
             max_workers = self.spin_cores.value()
-            
-            # 更新配置
-            if hasattr(self, 'use_process_pool'):
-                self.config_params["use_process_pool"] = self.use_process_pool.isChecked()
             
             # 创建工作线程
             self.worker = ScanWorker(
