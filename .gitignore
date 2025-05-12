@@ -49,12 +49,12 @@ test_large/
 test_small/
 
 # 离线依赖包
-libs/*.whl
-libs/*.tar.gz
-libs/*.zip
-libs/*.rar
-libs/*.7z
-libs/*.egg
+# libs/*.whl
+# libs/*.tar.gz
+# libs/*.zip
+# libs/*.rar
+# libs/*.7z
+# libs/*.egg
 
 # 其他
 settings.json
