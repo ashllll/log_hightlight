@@ -279,3 +279,53 @@ python main.py --input <日志文件或目录> --keywords <关键词列表>
   - 优化大文件处理
   - 添加导出功能
   - 支持更多配置选项
+
+## 自定义时间戳格式配置
+
+程序支持解析多种常见的时间戳格式，并且可以通过配置文件添加自定义格式。默认支持以下格式：
+
+- YYYY-MM-DD HH:MM:SS.sss
+- YYYY-MM-DD HH:MM:SS
+- YYYY/MM/DD HH:MM:SS
+- DD-MM-YYYY HH:MM:SS (欧洲格式)
+- DD/MM/YYYY HH:MM:SS (欧洲格式)
+- MM-DD HH:MM:SS.sss
+- MM-DD HH:MM:SS
+- HH:MM:SS.sss
+- HH:MM:SS
+- Unix时间戳 (秒或毫秒)
+- ISO 8601格式 (各种变体)
+
+### 添加自定义时间戳格式
+
+如果您的日志使用了特殊的时间戳格式，可以在 `settings.json` 文件中添加自定义格式：
+
+```json
+{
+  "custom_timestamp_formats": [
+    {
+      "pattern": "\\[(\\d{2}/[A-Za-z]{3}/\\d{4}:\\d{2}:\\d{2}:\\d{2})\\]",
+      "format": "%d/%b/%Y:%H:%M:%S"
+    },
+    {
+      "pattern": "您的正则表达式模式",
+      "format": "对应的时间格式字符串"
+    }
+  ]
+}
+```
+
+格式说明：
+- `pattern`：用于提取时间戳的正则表达式，需要包含一个捕获组来提取时间戳文本
+- `format`：Python datetime.strptime() 使用的格式字符串
+
+常用格式符号：
+- %Y: 四位年份 (2023)
+- %m: 两位月份 (01-12)
+- %d: 两位日期 (01-31)
+- %H: 24小时制小时 (00-23)
+- %M: 分钟 (00-59)
+- %S: 秒钟 (00-59)
+- %f: 微秒
+- %z: UTC偏移量 (+0800)
+- %Z: 时区名称
