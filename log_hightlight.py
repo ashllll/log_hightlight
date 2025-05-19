@@ -31,6 +31,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QCoreApplication
 from PyQt5.QtGui import QTextCharFormat, QColor, QFont, QIcon, QPixmap
 
+# 导入自定义模块
+import utils  # 导入utils模块用于统一的时间戳解析和其他功能
+
 # 移除google-re2相关代码，直接使用Python内置re模块
 RE_MODULE = re
 logging.info("使用Python内置re模块进行正则表达式匹配")
@@ -652,16 +655,12 @@ def parse_timestamp(line: str) -> datetime.datetime:
     Returns:
         解析后的时间戳，如果无法解析则返回 datetime.datetime.min
     """
-    try:
-        if len(line) >= 18:
-            ts_str = line[:18]
-            # 假设年份为当前年份，如果需要更精确，可以从日志中提取
-            current_year = datetime.datetime.now().year
-            return datetime.datetime.strptime(
-    f"{current_year}-{ts_str}", "%Y-%m-%d %H:%M:%S.%f")
-    except ValueError:
+    # 使用utils.py中的增强版时间戳解析实现
+    result = utils.parse_timestamp_safe(line, use_default=False)
+    if result is None:
         logging.warning(f"无法解析时间戳: {line[:18] if len(line) >= 18 else line}")
-    return datetime.datetime.min
+        return datetime.datetime.min
+    return result
 
 
 class ScanWorker(QThread):

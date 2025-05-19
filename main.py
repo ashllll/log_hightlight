@@ -24,7 +24,7 @@ import gzip
 import shutil
 import tempfile
 import logging
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton, QFileDialog,
     QHBoxLayout, QVBoxLayout, QMessageBox, QGroupBox, QComboBox, QCheckBox,
@@ -1024,22 +1024,52 @@ class LogHighlighter(QMainWindow):
 
     def _start_scan_worker(self, files: List[str], all_kws: List[Dict], out_path: str, max_workers: int) -> None:
         """启动扫描工作线程。"""
+        # 配置扫描参数
         self.worker = ScanWorker(
-            file_paths=files,
-            keywords=all_kws,
-            out_path=out_path,
-            max_workers=max_workers,
-            config_params=self.config_params,
-            temp_manager=self.temp_manager,
-            parent=self
+            files, all_kws, out_path, max_workers, self.config_params,
+            temp_manager=self.temp_manager, parent=self
         )
+        
+        # 传递自定义时间戳格式
+        if hasattr(self, 'custom_timestamp_formats'):
+            timestamp_formats = self._load_custom_timestamp_formats()
+            if timestamp_formats:
+                self.worker.custom_timestamp_formats = timestamp_formats
+                self.debug.append(f"已加载 {len(timestamp_formats)} 个自定义时间戳格式")
+        
+        # 连接信号和槽
+        self.worker.progress.connect(self._on_scan_progress)
+        self.worker.finished.connect(self._on_scan_finished)
         self.worker.error.connect(self._on_scan_error)
         self.worker.warning.connect(self._on_scan_warning)
-        self.worker.progress.connect(self._on_scan_progress)
         self.worker.debug.connect(self._on_scan_debug_message)
-        self.worker.finished.connect(self._on_scan_finished)
+        
+        # 启动线程
         self.worker.start()
-        self.debug.append("工作线程已启动")
+
+    def _load_custom_timestamp_formats(self) -> List[Tuple[str, List[str]]]:
+        """从settings.json中加载自定义时间戳格式配置"""
+        try:
+            if not os.path.isfile(self.settings_path):
+                return []
+                
+            with open(self.settings_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                
+            formats = []
+            custom_formats = settings.get('custom_timestamp_formats', [])
+            
+            for fmt in custom_formats:
+                if isinstance(fmt, dict) and 'pattern' in fmt and 'format' in fmt:
+                    pattern = fmt['pattern']
+                    format_str = fmt['format']
+                    formats.append((pattern, [format_str]))
+                    
+            return formats
+        except Exception as e:
+            logging.error(f"加载自定义时间戳格式失败: {e}")
+            self.debug.append(f"警告: 加载自定义时间戳格式失败: {str(e)}")
+            return []
 
     def decompress_selected(self) -> None:
         """解压选中的压缩文件。"""

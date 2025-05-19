@@ -63,6 +63,8 @@ class ScanWorker(QThread):
         self.memory_monitor = None
         self.task_id = f"scan_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
         self.parent_widget = parent  # 存储父窗口引用
+        # 自定义时间戳格式
+        self.custom_timestamp_formats = []
 
         # 扫描模式和优化配置
         self.scan_mode = config_params.get("scan_mode", CONFIG_DEFAULTS["scan_mode"])
@@ -317,7 +319,7 @@ class ScanWorker(QThread):
                                     # 从字典中获取时间戳
                                     timestamp_str = match_item.get('timestamp', '')
                                     try:
-                                        ts = parse_timestamp(timestamp_str)
+                                        ts = parse_timestamp(timestamp_str, self.custom_timestamp_formats)
                                         start_ts = ts.replace(minute=0, second=0, microsecond=0, hour=ts.hour - (ts.hour % self.time_range_hours))
                                         end_ts = start_ts + datetime.timedelta(hours=self.time_range_hours)
                                         if (start_ts, end_ts) not in time_groups:
@@ -556,11 +558,13 @@ class ScanWorker(QThread):
 
             # 只有当找到匹配的关键词在用户选择的列表中时，才添加到结果中
             if exact_match or case_insensitive_match:
-                ts_str = original_line[:19] if len(original_line) >= 19 and original_line[4] == '-' and original_line[7] == '-' else "unknown_time"
-                # 尝试从行首提取更标准的时间戳，如果匹配特定格式
-                match = re.match(r"^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[,.]\d{3,6})?Z?)", original_line)
-                if match:
-                    ts_str = match.group(1)
+                # 使用增强的时间戳解析功能，传入自定义格式
+                timestamp_result = parse_timestamp(original_line, self.custom_timestamp_formats)
+                if timestamp_result:
+                    ts_str = timestamp_result.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                else:
+                    ts_str = "unknown_time"
+                    self.debug.emit(f"无法解析时间戳: {original_line[:30] if len(original_line) > 30 else original_line}")
 
                 out.append({
                     'timestamp': ts_str,
