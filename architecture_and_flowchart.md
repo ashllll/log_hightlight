@@ -31,6 +31,7 @@
 │   └── 工具函数集 (utils.py)
 │       ├── 颜色管理
 │       ├── 配置处理
+│       ├── 时间戳解析
 │       └── 通用工具
 │
 ├── 辅助组件
@@ -67,6 +68,10 @@ graph TD
     D --> K[扫描线程 ScanWorker]
     C --> K
     E --> K
+    F --> K
+    
+    F --> Z[时间戳解析器]
+    Z --> K
 ```
 
 ## 主要流程图
@@ -102,6 +107,7 @@ sequenceDiagram
     participant 扫描工作线程
     participant 文件处理模块
     participant 内存监控器
+    participant 时间戳解析器
     
     用户->>GUI界面: 选择日志文件/目录
     用户->>GUI界面: 配置关键词
@@ -117,6 +123,8 @@ sequenceDiagram
         文件处理模块-->>扫描工作线程: 返回文件内容
         扫描工作线程->>关键词匹配器: 匹配关键词
         关键词匹配器-->>扫描工作线程: 返回匹配结果
+        扫描工作线程->>时间戳解析器: 解析日志时间戳
+        时间戳解析器-->>扫描工作线程: 返回解析后的时间戳
         扫描工作线程->>扫描工作线程: 生成高亮内容
         扫描工作线程->>GUI界面: 更新进度
     end
@@ -149,6 +157,33 @@ flowchart TD
     N --> O
     F --> O
     O --> P[结束]
+```
+
+### 时间戳解析流程
+
+```mermaid
+flowchart TD
+    A[开始] --> B[接收日志行]
+    B --> C{加载自定义时间戳格式}
+    C --> D{尝试内置标准格式}
+    D --> E{尝试内置ISO 8601格式}
+    E --> F{尝试欧洲日期格式}
+    F --> G{尝试Unix时间戳格式}
+    G --> H{尝试自定义格式}
+    
+    D -->|成功| I[返回解析后的时间戳]
+    E -->|成功| I
+    F -->|成功| I
+    G -->|成功| I
+    H -->|成功| I
+    
+    H -->|失败| J{返回默认值?}
+    J -->|是| K[返回当前时间]
+    J -->|否| L[返回None]
+    
+    K --> M[结束]
+    L --> M
+    I --> M
 ```
 
 ## 核心组件功能
@@ -229,10 +264,14 @@ flowchart TD
   - 读写配置文件
   - 验证配置有效性
   - 提供默认值
+- **时间戳解析**
+  - 支持多种时间戳格式
+  - 处理特殊时区格式
+  - 提供自定义格式扩展
 - **通用功能**
-  - 时间戳处理
   - 字符串操作
   - 路径处理
+  - HTML生成
 
 ## 扫描线程详细流程
 
@@ -243,422 +282,170 @@ flowchart TD
    - 初始化关键词匹配器
    - 设置进度监控器
    - 配置内存监控器
+   - 加载自定义时间戳格式
 
 2. **扫描准备**
    - 确定扫描模式（自动、快速、精确、平衡）
    - 根据系统资源确定并行度
    - 按批次准备文件任务列表
+   - 初始化结果存储结构
 
 3. **文件处理**
-   - 检查文件大小，选择适当的读取策略：
-     - 小文件：标准读取
-     - 大文件：流式处理
-     - 超大文件：内存映射(mmap)
-   - 逐行读取文件内容
-   - 对每行内容应用关键词匹配
-   - 收集匹配结果
+   - 根据文件大小选择处理策略
+   - 小文件：一次性读取到内存
+   - 大文件：流式处理
+   - 超大文件：内存映射处理
+   - 处理不同编码
 
-4. **结果处理**
-   - 按时间范围分组结果
-   - 生成HTML报告文件
-   - 创建结果摘要和统计信息
+4. **行处理**
+   - 应用关键词匹配
+   - 解析时间戳
+   - 生成高亮HTML
+   - 按时间范围分组
 
-5. **资源清理**
-   - 关闭打开的文件
+5. **结果生成**
+   - 按时间范围创建HTML文件
+   - 排序匹配结果
+   - 生成摘要报告
+   - 创建索引页面
+
+6. **结束清理**
    - 清理临时文件
-   - 释放系统资源
+   - 释放内存资源
+   - 保存检查点信息
+   - 发送完成信号
 
-## 关键类和函数说明
+## 时间戳处理功能
 
-### `LogHighlighter` 类
+日志高亮工具提供强大的时间戳解析功能，支持多种格式的时间戳识别和处理：
 
-图形界面主类，提供用户交互界面和控制逻辑。主要方法：
-- `init_ui()`: 初始化图形界面
-- `analyze_combined_keywords()`: 启动关键词分析过程
-- `add_directory()/add_file()/add_archive()`: 添加日志源
-- `load_settings()/save_settings()`: 管理用户设置
+### 支持的时间戳格式
 
-### `ScanWorker` 类
+1. **标准日期时间格式**
+   - YYYY-MM-DD HH:MM:SS.sss
+   - YYYY-MM-DD HH:MM:SS
+   - YYYY/MM/DD HH:MM:SS
 
-处理扫描任务的工作线程。主要方法：
-- `run()`: 线程主执行函数
-- `scan_file()`: 扫描单个文件
-- `_process_line_with_matcher()`: 处理单行内容
-- `_generate_output_files()`: 生成结果文件
+2. **欧洲日期格式**
+   - DD-MM-YYYY HH:MM:SS
+   - DD/MM/YYYY HH:MM:SS
+   - DD.MM.YYYY HH:MM:SS
 
-### `KeywordMatcher` 类
+3. **部分日期时间格式**
+   - MM-DD HH:MM:SS.sss
+   - MM-DD HH:MM:SS
+   - HH:MM:SS.sss
+   - HH:MM:SS
 
-关键词匹配处理核心。主要方法：
-- `match_line()`: 在文本行中匹配关键词
-- `highlight_line()`: 对匹配内容应用高亮
-- `should_process_line()`: 快速预过滤检查
+4. **ISO 8601格式**
+   - YYYY-MM-DDThh:mm:ss.sssZ
+   - YYYY-MM-DDThh:mm:ssZ
+   - YYYY-MM-DDThh:mm:ss.sss+0000
+   - YYYY-MM-DDThh:mm:ss+0000
 
-### `TempFileManager` 类
+5. **Unix时间戳**
+   - 10位秒级时间戳
+   - 13位毫秒级时间戳
 
-管理临时文件。主要方法：
-- `create_temp_file()`: 创建新的临时文件
-- `cleanup_all()`: 清理所有临时文件
+6. **其他日志格式**
+   - Apache日志格式: [DD/Mon/YYYY:HH:MM:SS +0000]
+   - 自定义格式（通过settings.json配置）
 
-### `MemoryMonitor` 类
+### 时间戳解析流程
 
-监控内存使用情况。主要方法：
-- `_check_memory()`: 检查当前内存使用
-- `suggest_worker_count()`: 根据内存建议工作线程数量
+1. **预处理**
+   - 验证输入行长度是否足够
+   - 加载自定义时间戳格式
 
-## 数据流图
+2. **格式尝试**
+   - 按优先级尝试匹配各种格式
+   - 使用正则表达式提取时间戳部分
+   - 尝试使用datetime.strptime解析
 
-```mermaid
-flowchart LR
-    A[日志文件] --> B[文件处理模块]
-    B --> |读取| C[文本内容]
-    C --> |分析| D[关键词匹配引擎]
-    E[关键词定义] --> |配置| D
-    D --> |结果| F[匹配结果]
-    F --> |格式化| G[HTML报告]
-    H[内存监控] --> |控制| B
-    H --> |优化| D
-```
+3. **特殊处理**
+   - Unix时间戳特殊转换
+   - 处理不包含年份的时间戳
+   - 处理只有时间没有日期的情况
+   - 处理各种时区表示
 
-## 性能优化策略
+4. **错误处理**
+   - 解析失败时的优雅降级
+   - 提供安全解析函数（parse_timestamp_safe）
+   - 可选使用默认时间替代
 
-### 1. 内存优化
-- 使用内存映射处理大文件
-- 实现流式处理避免全文加载
-- 动态调整缓存大小
-- 及时释放不需要的资源
+### 自定义时间戳配置
 
-### 2. 速度优化
-- 使用多线程并行处理
-- 实现预过滤机制
-- 使用位图过滤加速匹配
-- 缓存编译后的正则表达式
+通过settings.json文件，用户可以配置自己的时间戳格式：
 
-### 3. 资源管理
-- 动态调整线程数
-- 智能分配工作负载
-- 实现断点续扫
-- 优化文件读写操作
-
-## 错误处理机制
-
-### 1. 异常捕获
-- 文件操作异常
-- 内存不足异常
-- 正则表达式错误
-- GUI相关异常
-
-### 2. 恢复策略
-- 保存检查点
-- 清理临时文件
-- 释放系统资源
-- 重试失败操作
-
-### 3. 用户反馈
-- 显示错误信息
-- 提供解决建议
-- 记录详细日志
-- 允许手动干预
-
-## 扩展性设计
-
-### 1. 模块化结构
-- 清晰的模块边界
-- 标准化接口
-- 低耦合设计
-- 可插拔组件
-
-### 2. 配置系统
-- 外部配置文件
-- 运行时配置
-- 用户偏好设置
-- 主题定制
-
-### 3. 插件机制
-- 自定义关键词处理
-- 新文件格式支持
-- 结果输出格式
-- 报告模板
-
-## 模块详细说明
-
-### 1. 主程序模块 (main.py)
-
-主程序模块是整个应用的入口点，主要职责包括：
-
-#### 1.1 GUI界面初始化
-```python
-class LogHighlighter(QMainWindow):
-    def __init__(self):
-        # 初始化主窗口
-        self.init_ui()
-        # 设置窗口属性
-        self.setWindowTitle("日志关键词高亮工具")
-        self.resize(1200, 800)
-```
-
-#### 1.2 用户交互处理
-- 文件选择对话框
-- 配置文件加载
-- 按钮事件处理
-- 进度条更新
-- 状态栏消息
-
-#### 1.3 工作流程控制
-- 初始化扫描任务
-- 创建工作线程
-- 管理分析过程
-- 处理结果展示
-
-### 2. 日志高亮核心 (log_hightlight.py)
-
-核心模块实现主要的业务逻辑：
-
-#### 2.1 配置管理
-```python
-def load_config(self, config_path: str) -> Dict:
-    """加载TOML配置文件"""
-    with open(config_path, 'r', encoding='utf-8') as f:
-        return toml.load(f)
-```
-
-#### 2.2 关键词组管理
-- 关键词分组
-- 颜色分配
-- 匹配规则设置
-
-#### 2.3 分析控制
-- 任务分发
-- 进度跟踪
-- 结果收集
-- 报告生成
-
-### 3. 关键词匹配引擎 (keyword_matcher.py)
-
-实现核心的文本匹配和处理逻辑：
-
-#### 3.1 匹配器实现
-```python
-class KeywordMatcher:
-    def __init__(self):
-        self.patterns = {}
-        self.colors = {}
-        self.prefilter_enabled = True
-        self.bitmap_filter_enabled = True
-```
-
-#### 3.2 匹配策略
-- 普通文本匹配
-  ```python
-  def match_text(self, line: str, keyword: str, case_sensitive: bool) -> bool:
-      if not case_sensitive:
-          line = line.lower()
-          keyword = keyword.lower()
-      return keyword in line
-  ```
-- 正则表达式匹配
-  ```python
-  def match_regex(self, line: str, pattern: str) -> List[Match]:
-      try:
-          return list(re.finditer(pattern, line))
-      except re.error:
-          logging.error(f"正则表达式错误: {pattern}")
-          return []
-  ```
-- 位图过滤优化
-  ```python
-  def apply_bitmap_filter(self, line: str) -> bool:
-      # 使用位图快速过滤不可能匹配的行
-      bitmap = self._create_bitmap(line)
-      return any(self._check_bitmap(bitmap, kw) for kw in self.keywords)
-  ```
-
-#### 3.3 高亮处理
-- HTML标记生成
-- 颜色应用
-- 重叠处理
-
-### 4. 文件处理模块 (file_handler.py)
-
-负责所有文件相关操作：
-
-#### 4.1 文件读取策略
-```python
-class FileHandler:
-    def read_file(self, path: str, size_threshold: int = 100*1024*1024):
-        """根据文件大小选择读取策略"""
-        size = os.path.getsize(path)
-        if size < size_threshold:
-            return self._read_small_file(path)
-        else:
-            return self._read_large_file(path)
-```
-
-#### 4.2 压缩文件处理
-- RAR文件处理
-  ```python
-  def handle_rar(self, path: str) -> List[str]:
-      with rarfile.RarFile(path) as rf:
-          return self._extract_archive(rf)
-  ```
-- ZIP文件处理
-- 7Z文件处理
-
-#### 4.3 临时文件管理
-```python
-class TempFileManager:
-    def __init__(self):
-        self.temp_dir = os.path.join(tempfile.gettempdir(), "log_highlighter_temp")
-        self.files = set()
-        
-    def cleanup(self):
-        """清理所有临时文件"""
-        for file in self.files:
-            try:
-                os.remove(file)
-            except OSError:
-                pass
-```
-
-### 5. 内存管理模块 (memory_manager.py)
-
-负责内存监控和优化：
-
-#### 5.1 内存监控
-```python
-class MemoryMonitor:
-    def __init__(self, threshold_mb: int = 1000):
-        self.threshold = threshold_mb * 1024 * 1024  # 转换为字节
-        self.warning_level = 0.8  # 80%警告阈值
-        
-    def check_memory(self) -> Dict:
-        """检查当前内存使用状况"""
-        usage = psutil.Process().memory_info()
-        return {
-            'rss': usage.rss,  # 物理内存
-            'vms': usage.vms,  # 虚拟内存
-            'percent': usage.rss / self.threshold
-        }
-```
-
-#### 5.2 资源优化
-- 动态线程数调整
-  ```python
-  def suggest_thread_count(self) -> int:
-      """根据当前内存使用情况建议线程数"""
-      usage = self.check_memory()
-      if usage['percent'] > self.warning_level:
-          return max(1, self.current_threads - 1)
-      return min(os.cpu_count(), self.max_threads)
-  ```
-- 缓存管理
-- 垃圾回收控制
-
-### 6. 工具函数集 (utils.py)
-
-提供通用功能支持：
-
-#### 6.1 颜色处理
-```python
-def generate_color(index: int) -> str:
-    """生成互补色彩"""
-    hue = (index * 137.508) % 360  # 黄金角度
-    return f"hsl({hue}, 70%, 60%)"
-```
-
-#### 6.2 时间处理
-```python
-def parse_timestamp(line: str) -> Optional[datetime]:
-    """解析多种格式的时间戳"""
-    patterns = [
-        r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}',
-        r'\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}',
-        # 更多模式...
-    ]
-    for pattern in patterns:
-        if match := re.search(pattern, line):
-            try:
-                return datetime.strptime(match.group(), pattern)
-            except ValueError:
-                continue
-    return None
-```
-
-#### 6.3 配置处理
-```python
-def load_settings(path: str) -> Dict:
-    """加载并验证设置"""
-    with open(path, 'r') as f:
-        settings = json.load(f)
-    return validate_settings(settings)
-```
-
-### 7. 平台检查模块 (platform_check.py)
-
-负责环境兼容性检查：
-
-#### 7.1 系统检查
-```python
-def check_system():
-    """检查操作系统兼容性"""
-    system = platform.system()
-    if system == "Windows":
-        return check_windows()
-    elif system == "Darwin":
-        return check_macos()
-    elif system == "Linux":
-        return check_linux()
-```
-
-#### 7.2 依赖检查
-```python
-def check_dependencies():
-    """检查必要的Python包"""
-    required = {
-        'PyQt5': '5.15.0',
-        'toml': '0.10.0',
-        'psutil': '5.7.0'
+```json
+{
+  "custom_timestamp_formats": [
+    {
+      "pattern": "\\[(\\d{2}/[A-Za-z]{3}/\\d{4}:\\d{2}:\\d{2}:\\d{2})\\]",
+      "format": "%d/%b/%Y:%H:%M:%S"
     }
-    for package, min_version in required.items():
-        try:
-            module = importlib.import_module(package)
-            version = getattr(module, '__version__', '0.0.0')
-            if parse_version(version) < parse_version(min_version):
-                raise ImportError(f"{package} 版本过低")
-        except ImportError as e:
-            return False, str(e)
-    return True, "所有依赖检查通过"
+  ]
+}
 ```
 
-## 模块间通信
+## 内存优化策略
 
-### 1. 信号机制
-```python
-class LogHighlighter(QMainWindow):
-    scan_progress = pyqtSignal(str)  # 扫描进度信号
-    scan_complete = pyqtSignal(str)  # 扫描完成信号
-    scan_error = pyqtSignal(str)     # 错误信号
-```
+日志高亮工具针对大规模日志文件处理进行了多项内存优化：
 
-### 2. 回调机制
-```python
-class ScanWorker(QThread):
-    def __init__(self, callback):
-        super().__init__()
-        self.callback = callback
-        
-    def run(self):
-        try:
-            result = self.process()
-            self.callback(result)
-        except Exception as e:
-            self.error.emit(str(e))
-```
+1. **分级处理策略**
+   - 小文件（<100MB）：整体加载
+   - 大文件（100MB-500MB）：流式处理
+   - 超大文件（>500MB）：内存映射
 
-### 3. 事件循环
-```python
-def main():
-    app = QApplication(sys.argv)
-    window = LogHighlighter()
-    window.show()
-    sys.exit(app.exec_())
-``` 
+2. **动态内存监控**
+   - 实时监控内存使用率
+   - 设置警告阈值（默认75%）
+   - 设置危险阈值（默认90%）
+
+3. **自适应并行度**
+   - 根据内存压力动态调整线程数
+   - 内存接近警告阈值时减少一半线程
+   - 内存接近危险阈值时减少为1/4线程
+
+4. **批处理与缓冲**
+   - 分批处理文件列表
+   - 结果缓冲区定期刷新
+   - 启用垃圾回收周期
+
+5. **预过滤优化**
+   - 位图过滤快速排除无关行
+   - 关键词预筛选减少正则匹配
+   - 分级正则表达式处理
+
+## 扩展与定制
+
+日志高亮工具设计灵活，支持多种扩展和定制方式：
+
+1. **关键词定义扩展**
+   - 通过TOML配置文件添加关键词组
+   - 支持正则表达式模式
+   - 支持注释和颜色定制
+
+2. **时间戳格式扩展**
+   - 通过settings.json添加自定义时间戳格式
+   - 支持复杂的正则表达式模式
+   - 可指定详细的解析格式字符串
+
+3. **用户界面定制**
+   - 配置项可通过GUI调整
+   - 设置持久化到配置文件
+   - 关键词高亮颜色可自定义
+
+4. **扫描策略定制**
+   - 可选不同扫描模式
+   - 可调整内存使用策略
+   - 可配置并行处理参数
+
+5. **输出格式定制**
+   - HTML报告样式可定制
+   - 时间范围分组参数可调整
+   - 结果排序方式可配置
+
+## 结论
+
+日志高亮工具采用模块化设计，各组件职责清晰，通过优化的算法和内存管理策略，能够高效处理大规模日志文件。强大的时间戳解析功能使其能够适应各种日志格式，而灵活的扩展机制则让用户可以根据需要进行定制。 
