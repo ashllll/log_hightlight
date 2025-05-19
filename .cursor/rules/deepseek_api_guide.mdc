@@ -1,0 +1,585 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# DeepSeek Python API 完整指南
+
+## 基础配置
+
+```python
+from openai import OpenAI
+import os
+
+# 核心配置
+API_KEY = os.getenv("DEEPSEEK_API_KEY", "<YOUR_DEEPSEEK_API_KEY>") # 从环境变量读取，提供占位符
+BASE_URL = "https://api.deepseek.com/v1"
+
+# 可用模型
+MODEL_CHAT = "deepseek-chat"      # 适用于一般对话和简单代码生成
+MODEL_REASONER = "deepseek-reasoner"  # 适用于复杂推理和工具调用
+
+# 初始化客户端（全局单例模式）
+client = OpenAI(
+    api_key=API_KEY,
+    base_url=BASE_URL
+)
+```
+
+## 标准调用模式
+
+### 基本聊天模式
+
+```python
+def chat_completion(prompt, system_message=None, model=MODEL_CHAT):
+    """标准聊天完成请求
+    
+    Args:
+        prompt: 用户输入文本
+        system_message: 系统消息，定义助手角色和行为
+        model: 使用的模型，默认为聊天模型
+        
+    Returns:
+        生成的文本响应
+    """
+    messages = []
+    
+    # 添加系统消息（如果提供）
+    if system_message:
+        messages.append({"role": "system", "content": system_message})
+    
+    # 添加用户消息
+    messages.append({"role": "user", "content": prompt})
+    
+    # 发送请求
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        stream=False
+    )
+    
+    return response.choices[0].message.content
+```
+
+### 流式响应处理
+
+```python
+def stream_completion(prompt, system_message=None, model=MODEL_CHAT, callback=None):
+    """流式聊天完成请求
+    
+    Args:
+        prompt: 用户输入文本
+        system_message: 系统消息，定义助手角色和行为
+        model: 使用的模型，默认为聊天模型
+        callback: 处理每个流式响应块的回调函数
+        
+    Returns:
+        完整的生成文本（如果callback为None）
+    """
+    messages = []
+    
+    # 添加系统消息（如果提供）
+    if system_message:
+        messages.append({"role": "system", "content": system_message})
+    
+    # 添加用户消息
+    messages.append({"role": "user", "content": prompt})
+    
+    # 发送流式请求
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        stream=True
+    )
+    
+    # 如果提供了回调，逐块处理响应
+    if callback:
+        for chunk in response:
+            if chunk.choices[0].delta.content:
+                callback(chunk.choices[0].delta.content)
+        return None
+    
+    # 否则，收集并返回完整响应
+    full_response = ""
+    for chunk in response:
+        if chunk.choices[0].delta.content:
+            full_response += chunk.choices[0].delta.content
+    
+    return full_response
+```
+
+## MCP 服务集成
+
+MCP（Model Control Protocol）服务可以帮助更高效完成代码开发任务。将DeepSeek API与MCP服务集成，可以让AI模型辅助完成更复杂的开发工作。
+
+```python
+import json
+
+def call_mcp_service(service_name, parameters):
+    """调用MCP服务
+    
+    Args:
+        service_name: MCP服务名称
+        parameters: 服务所需参数字典
+        
+    Returns:
+        服务响应内容
+    """
+    # 构建请求消息
+    message = f"""
+请调用MCP服务 {service_name}，参数如下：
+```json
+{json.dumps(parameters, ensure_ascii=False, indent=2)}
+```
+只返回执行结果，不要包含任何解释文本。
+"""
+    
+    # 使用推理模型处理服务调用
+    response = client.chat.completions.create(
+        model=MODEL_REASONER,
+        messages=[
+            {"role": "system", "content": "你是一个专业的开发者助手，可以精确调用各种MCP服务。"},
+            {"role": "user", "content": message}
+        ]
+    )
+    
+    return response.choices[0].message.content
+```
+
+### 常用MCP服务
+
+#### 代码生成
+
+```python
+def generate_code(description, language="python"):
+    """使用MCP服务生成代码
+    
+    Args:
+        description: 代码需求描述
+        language: 编程语言
+        
+    Returns:
+        生成的代码
+    """
+    return call_mcp_service("code_generation", {
+        "description": description,
+        "language": language,
+        "context": "MIT开源协议下的个人项目"
+    })
+```
+
+#### 代码优化
+
+```python
+def optimize_code(code, goal="performance"):
+    """使用MCP服务优化代码
+    
+    Args:
+        code: 需要优化的代码
+        goal: 优化目标 ("performance", "readability", "security")
+        
+    Returns:
+        优化后的代码
+    """
+    return call_mcp_service("code_optimization", {
+        "code": code,
+        "goal": goal,
+        "explanation": True  # 请求解释优化内容
+    })
+```
+
+## 最佳实践
+
+### 配置与安全
+
+- **API密钥管理**: 避免在代码中硬编码API密钥，优先使用环境变量或配置文件
+  ```python
+  import os
+  api_key = os.environ.get("DEEPSEEK_API_KEY", "<YOUR_DEEPSEEK_API_KEY>") # 占位符
+  ```
+
+- **错误处理**: 实现适当的错误处理和重试机制
+  ```python
+  import time
+  from openai import RateLimitError
+  
+  def resilient_api_call(func, max_retries=3, initial_backoff=1):
+      retries = 0
+      while retries < max_retries:
+          try:
+              return func()
+          except RateLimitError:
+              wait_time = initial_backoff * (2 ** retries)
+              print(f"Rate limit hit, retrying in {wait_time}s...")
+              time.sleep(wait_time)
+              retries += 1
+          except Exception as e:
+              print(f"Error: {str(e)}")
+              break
+      return None
+  ```
+
+### 模型选择
+
+- 使用 `deepseek-chat` 处理：
+  - 一般性对话交互
+  - 简单代码生成
+  - 文本改写和润色
+  
+- 使用 `deepseek-reasoner` 处理：
+  - 需要逻辑推理的任务
+  - 复杂代码生成与优化
+  - 工具调用和API集成
+  - 数据分析与解释
+
+### 提示工程
+
+- **清晰明确**: 提供具体的指示和所需输出格式
+- **角色设定**: 利用system message定义模型角色和约束
+- **上下文组织**: 有效组织提示中的上下文信息，确保关键信息靠前
+- **少量示例**: 提供少量示例("few-shot")来引导模型遵循特定模式
+
+## 示例项目
+
+### 1. 智能聊天助手
+
+```python
+import gradio as gr
+from openai import OpenAI
+import os
+
+# 初始化客户端 (从环境变量获取Key)
+client = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY", "<YOUR_DEEPSEEK_API_KEY>"),
+    base_url="https://api.deepseek.com/v1"
+)
+
+def chat_with_assistant(message, history):
+    # 转换历史记录为API格式
+    messages = [{"role": "system", "content": "你是一个专业、有帮助的助手，擅长清晰简洁地回答问题"}]
+    
+    for human, assistant in history:
+        messages.append({"role": "user", "content": human})
+        messages.append({"role": "assistant", "content": assistant})
+    
+    messages.append({"role": "user", "content": message})
+    
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=messages
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"出错: {str(e)}"
+
+# 创建Gradio界面
+demo = gr.ChatInterface(
+    chat_with_assistant,
+    title="DeepSeek AI 聊天助手",
+    description="一个基于DeepSeek API构建的智能聊天助手",
+    theme="soft"
+)
+
+if __name__ == "__main__":
+    demo.launch()
+```
+
+### 2. 代码生成工具
+
+```python
+from openai import OpenAI
+import tkinter as tk
+from tkinter import scrolledtext, ttk, messagebox
+import os
+
+# 初始化客户端 (从环境变量获取Key)
+client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY", "<YOUR_DEEPSEEK_API_KEY>"), base_url="https://api.deepseek.com/v1")
+
+class CodeGeneratorApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("DeepSeek代码生成器")
+        self.root.geometry("800x600")
+        self.create_widgets()
+    
+    def create_widgets(self):
+        # 顶部框架
+        top_frame = tk.Frame(self.root)
+        top_frame.pack(fill='x', padx=10, pady=5)
+        
+        tk.Label(top_frame, text="代码需求描述:").pack(anchor='w')
+        
+        # 输入区域
+        self.input_text = scrolledtext.ScrolledText(self.root, height=8)
+        self.input_text.pack(fill='x', padx=10, pady=5)
+        
+        # 控制区域
+        control_frame = tk.Frame(self.root)
+        control_frame.pack(fill='x', padx=10, pady=5)
+        
+        # 语言选择
+        tk.Label(control_frame, text="语言:").pack(side='left')
+        self.language_var = tk.StringVar(value="Python")
+        languages = ["Python", "JavaScript", "Java", "C++", "Go", "Rust"]
+        language_dropdown = ttk.Combobox(control_frame, textvariable=self.language_var, values=languages, width=15)
+        language_dropdown.pack(side='left', padx=(5, 15))
+        
+        # 模型选择
+        tk.Label(control_frame, text="模型:").pack(side='left')
+        self.model_var = tk.StringVar(value="deepseek-reasoner")
+        models = ["deepseek-chat", "deepseek-reasoner"]
+        model_dropdown = ttk.Combobox(control_frame, textvariable=self.model_var, values=models, width=15)
+        model_dropdown.pack(side='left', padx=(5, 15))
+        
+        # 生成按钮
+        self.generate_btn = tk.Button(control_frame, text="生成代码", command=self.generate_code, bg="#4CAF50", fg="white", padx=10)
+        self.generate_btn.pack(side='left', padx=10)
+        
+        # 复制按钮
+        self.copy_btn = tk.Button(control_frame, text="复制代码", command=self.copy_to_clipboard)
+        self.copy_btn.pack(side='left')
+        
+        # 输出区域
+        tk.Label(self.root, text="生成结果:").pack(anchor='w', padx=10, pady=(10, 0))
+        self.output_text = scrolledtext.ScrolledText(self.root, height=20)
+        self.output_text.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # 状态栏
+        self.status_var = tk.StringVar(value="就绪")
+        status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+    
+    def generate_code(self):
+        description = self.input_text.get("1.0", "end-1c").strip()
+        if not description:
+            messagebox.showerror("错误", "请输入代码需求描述")
+            return
+        
+        language = self.language_var.get()
+        model = self.model_var.get()
+        
+        self.generate_btn.config(state="disabled")
+        self.status_var.set(f"正在生成{language}代码...")
+        self.root.update()
+        
+        try:
+            # 构建系统提示
+            system_message = f"你是一个专业的{language}开发者。请根据需求生成高质量、符合最佳实践的{language}代码。只返回代码和必要的注释，不要包含其他解释文本。"
+            
+            # 调用API
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": f"为我编写以下功能的{language}代码:\n\n{description}"}
+                ]
+            )
+            
+            # 显示结果
+            result = response.choices[0].message.content
+            self.output_text.delete("1.0", "end")
+            self.output_text.insert("1.0", result)
+            self.status_var.set(f"{language}代码生成完成")
+            
+        except Exception as e:
+            self.output_text.delete("1.0", "end")
+            self.output_text.insert("1.0", f"生成代码时出错: {str(e)}")
+            self.status_var.set("生成失败")
+        finally:
+            self.generate_btn.config(state="normal")
+    
+    def copy_to_clipboard(self):
+        code = self.output_text.get("1.0", "end-1c")
+        if code:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(code)
+            self.status_var.set("代码已复制到剪贴板")
+        else:
+            self.status_var.set("没有代码可复制")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = CodeGeneratorApp(root)
+    root.mainloop()
+```
+
+### 3. 自动文档生成器
+
+```python
+import os
+import ast
+import argparse
+from openai import OpenAI
+
+# 客户端初始化 (从环境变量获取Key)
+client = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY", "<YOUR_DEEPSEEK_API_KEY>"),
+    base_url="https://api.deepseek.com/v1"
+)
+
+class DocGenerator:
+    def __init__(self, model="deepseek-chat"):
+        self.model = model
+        self.docstring_style = "google"  # 可选: google, numpy, sphinx
+    
+    def extract_functions(self, file_path):
+        """提取Python文件中的函数定义"""
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        
+        try:
+            tree = ast.parse(content)
+            functions = []
+            
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    # 获取函数定义的代码
+                    func_lines = content.splitlines()[node.lineno-1:node.end_lineno]
+                    func_code = '\n'.join(func_lines)
+                    
+                    # 检查是否已有文档字符串
+                    has_docstring = (isinstance(node.body[0], ast.Expr) and 
+                                    isinstance(node.body[0].value, ast.Constant) and 
+                                    isinstance(node.body[0].value.value, str))
+                    
+                    functions.append({
+                        'name': node.name,
+                        'code': func_code,
+                        'has_docstring': has_docstring,
+                        'lineno': node.lineno,
+                        'end_lineno': node.end_lineno
+                    })
+            
+            return functions
+        except SyntaxError as e:
+            print(f"语法错误，无法解析文件 {file_path}: {e}")
+            return []
+    
+    def generate_docstring(self, function_code):
+        """使用DeepSeek API生成函数文档字符串"""
+        prompt = f"""
+为以下Python函数生成一个详细的文档字符串（docstring），使用{self.docstring_style}风格:
+
+```python
+{function_code}
+```
+
+仅返回文档字符串内容，不含其他文本。确保描述函数功能、参数、返回值和可能的异常。
+"""
+        
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "你是一个专业的Python文档编写者，擅长生成清晰、全面的函数文档字符串。"},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"生成文档时出错: {str(e)}")
+            return f'"""函数文档生成失败: {str(e)}"""'
+    
+    def add_docstrings_to_file(self, file_path, verbose=True):
+        """为文件中的函数添加文档字符串"""
+        functions = self.extract_functions(file_path)
+        
+        if not functions:
+            if verbose:
+                print(f"文件中没有找到函数: {file_path}")
+            return 0
+        
+        if verbose:
+            print(f"在 {file_path} 中找到 {len(functions)} 个函数")
+        
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        
+        updated_count = 0
+        
+        # 为每个函数生成文档字符串
+        for func in functions:
+            if not func['has_docstring']:
+                if verbose:
+                    print(f"为函数 {func['name']} 生成文档...")
+                
+                docstring = self.generate_docstring(func['code'])
+                
+                # 查找函数定义行的末尾
+                func_def_end = func['code'].split('\n')[0]
+                if func_def_end.endswith(':'):
+                    # 在函数定义后添加文档字符串
+                    indentation = func_def_end.split('def ')[0]
+                    formatted_docstring = f'{indentation}    """{docstring}"""'
+                    
+                    new_func_code = func['code'].replace(
+                        func_def_end,
+                        f"{func_def_end}\n{formatted_docstring}"
+                    )
+                    content = content.replace(func['code'], new_func_code)
+                    updated_count += 1
+        
+        if updated_count > 0:
+            # 保存修改后的文件
+            with open(file_path, 'w', encoding='utf-8') as file:
+                file.write(content)
+            
+            if verbose:
+                print(f"更新了 {updated_count} 个函数的文档, 文件已保存: {file_path}")
+        elif verbose:
+            print(f"所有函数已有文档或无法添加文档")
+        
+        return updated_count
+    
+    def process_directory(self, directory, verbose=True):
+        """处理目录中的所有Python文件"""
+        total_files = 0
+        total_functions_updated = 0
+        
+        for root, _, files in os.walk(directory):
+            for file in files:
+                if file.endswith('.py'):
+                    file_path = os.path.join(root, file)
+                    if verbose:
+                        print(f"\n处理文件: {file_path}")
+                    
+                    total_files += 1
+                    updated = self.add_docstrings_to_file(file_path, verbose)
+                    total_functions_updated += updated
+        
+        if verbose:
+            print(f"\n总结: 处理了 {total_files} 个文件, 更新了 {total_functions_updated} 个函数的文档")
+        
+        return total_functions_updated
+
+def main():
+    parser = argparse.ArgumentParser(description="自动生成Python代码的文档字符串")
+    parser.add_argument("path", help="要处理的Python文件或目录路径")
+    parser.add_argument("--style", choices=["google", "numpy", "sphinx"], default="google",
+                        help="文档字符串风格 (默认: google)")
+    parser.add_argument("--model", choices=["deepseek-chat", "deepseek-reasoner"], default="deepseek-chat",
+                        help="使用的DeepSeek模型 (默认: deepseek-chat)")
+    parser.add_argument("--quiet", action="store_true", help="减少输出详细程度")
+    
+    args = parser.parse_args()
+    
+    doc_generator = DocGenerator(model=args.model)
+    doc_generator.docstring_style = args.style
+    
+    target = os.path.abspath(args.path)
+    verbose = not args.quiet
+    
+    if os.path.isfile(target) and target.endswith('.py'):
+        doc_generator.add_docstrings_to_file(target, verbose)
+    elif os.path.isdir(target):
+        doc_generator.process_directory(target, verbose)
+    else:
+        print("错误: 提供的路径不是有效的Python文件或目录")
+        return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    exit(main())

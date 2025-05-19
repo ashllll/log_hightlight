@@ -1,0 +1,14 @@
+brotli
+easyprocess
+entrypoint2
+psutil
+py7zr
+PyQt5
+PyQt5-Qt5
+PyQt5-sip
+pyunpack
+pyzstd
+rarfile
+setuptools
+setuptools-scm
+patool 
